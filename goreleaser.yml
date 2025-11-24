@@ -4,6 +4,7 @@ project_name: voltpanel
 # Run this before building (e.g., build frontend)
 before:
   hooks:
+    - go mod tidy
     - make ui-build
 
 builds:
