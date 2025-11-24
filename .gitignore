@@ -23,3 +23,5 @@ ui/.vite/
 .idea/
 .vscode/
 *.swp
+
+.hide

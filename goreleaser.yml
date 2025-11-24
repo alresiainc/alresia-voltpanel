@@ -1,5 +1,7 @@
+version: 2 # << mandatory for v2 config
 project_name: voltpanel
 
+# Run this before building (e.g., build frontend)
 before:
   hooks:
     - make ui-build
@@ -27,15 +29,16 @@ nfpms:
   - id: linux-packages
     builds: [voltpanel]
     formats: [deb, rpm]
-    maintainer: Alresia <dev@alresia.com>
-    description: Alresia VoltPanel local server management daemon
+    maintainer: "Alresia <dev@alresia.com>"
+    description: "Alresia VoltPanel local server management daemon"
     license: MIT
     vendor: Alresia
     homepage: https://alresia.com
     contents:
       - src: ./dist/voltpanel
         dst: /usr/bin/voltpanel
-        mode: 0755
+        file_info:
+          mode: 0755
       - src: ./packaging/devpanel.service
         dst: /lib/systemd/system/devpanel.service
     scripts:
@@ -43,11 +46,11 @@ nfpms:
 
 brews:
   - name: voltpanel
-    tap:
+    repository:
       owner: alresiainc
       name: homebrew-tap
-    folder: Formula
-    description: Alresia VoltPanel local server management daemon
+    directory: Formula
+    description: "Alresia VoltPanel local server management daemon"
     homepage: https://alresia.com
     service: |
       run [opt_bin/"voltpanel"]
@@ -64,4 +67,4 @@ snapshot:
   name_template: "{{ incpatch .Version }}-next"
 
 changelog:
-  skip: true
+  disable: true
