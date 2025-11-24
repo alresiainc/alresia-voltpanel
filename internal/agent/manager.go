@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alresia/voltpanel/internal/storage"
-	"github.com/alresia/voltpanel/internal/ws"
+	"github.com/alresiainc/alresia-voltpanel/internal/storage"
+	"github.com/alresiainc/alresia-voltpanel/internal/ws"
 )
 
 type StartRequest struct {

@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alresia/voltpanel/internal/agent"
-	"github.com/alresia/voltpanel/internal/metrics"
-	"github.com/alresia/voltpanel/internal/storage"
-	"github.com/alresia/voltpanel/internal/ws"
+	"github.com/alresiainc/alresia-voltpanel/internal/agent"
+	"github.com/alresiainc/alresia-voltpanel/internal/metrics"
+	"github.com/alresiainc/alresia-voltpanel/internal/storage"
+	"github.com/alresiainc/alresia-voltpanel/internal/ws"
 	"github.com/gin-gonic/gin"
 )
 

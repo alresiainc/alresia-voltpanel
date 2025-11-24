@@ -44,11 +44,16 @@ nfpms:
 brews:
   - name: voltpanel
     tap:
-      owner: alresia
+      owner: alresiainc
       name: homebrew-tap
     folder: Formula
     description: Alresia VoltPanel local server management daemon
     homepage: https://alresia.com
+    service: |
+      run [opt_bin/"voltpanel"]
+      keep_alive true
+      log_path var/"log/voltpanel.log"
+      error_log_path var/"log/voltpanel.log"
     test: |
       system "voltpanel", "-h"
 

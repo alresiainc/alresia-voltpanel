@@ -9,8 +9,8 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/alresia/voltpanel/internal/server"
-	"github.com/alresia/voltpanel/internal/storage"
+	"github.com/alresiainc/alresia-voltpanel/internal/server"
+	"github.com/alresiainc/alresia-voltpanel/internal/storage"
 )
 
 //go:embed dist/*

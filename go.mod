@@ -1,4 +1,4 @@
-module github.com/alresia/voltpanel
+module github.com/alresiainc/alresia-voltpanel
 
 go 1.22
 
