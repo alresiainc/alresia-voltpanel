@@ -1,0 +1,25 @@
+# Build
+/dist/
+/bin/
+/tmp/
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+coverage.out
+
+# Node
+ui/node_modules/
+ui/dist/
+ui/.turbo/
+ui/.vite/
+
+# OS / Editors
+.DS_Store
+.idea/
+.vscode/
+*.swp

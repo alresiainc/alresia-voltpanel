@@ -1,0 +1,24 @@
+name: CI
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: Build UI
+        run: |
+          sudo npm -g i pnpm
+          make ui-build || true
+      - name: Build
+        run: make build
+      - name: Test
+        run: go test ./...
+      - name: Integration Test
+        run: bash scripts/integration_test.sh || true

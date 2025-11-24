@@ -1,0 +1,62 @@
+project_name: voltpanel
+
+before:
+  hooks:
+    - make ui-build
+
+builds:
+  - id: voltpanel
+    main: ./cmd/voltpanel
+    binary: voltpanel
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+    flags: ["-trimpath"]
+
+archives:
+  - id: default
+    builds: [voltpanel]
+    format_overrides:
+      - goos: windows
+        format: zip
+
+nfpms:
+  - id: linux-packages
+    builds: [voltpanel]
+    formats: [deb, rpm]
+    maintainer: Alresia <dev@alresia.com>
+    description: Alresia VoltPanel local server management daemon
+    license: MIT
+    vendor: Alresia
+    homepage: https://alresia.com
+    contents:
+      - src: ./dist/voltpanel
+        dst: /usr/bin/voltpanel
+        mode: 0755
+      - src: ./packaging/devpanel.service
+        dst: /lib/systemd/system/devpanel.service
+    scripts:
+      postinstall: packaging/scripts/postinstall.sh
+
+brews:
+  - name: voltpanel
+    tap:
+      owner: alresia
+      name: homebrew-tap
+    folder: Formula
+    description: Alresia VoltPanel local server management daemon
+    homepage: https://alresia.com
+    test: |
+      system "voltpanel", "-h"
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  skip: true

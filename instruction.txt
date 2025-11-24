@@ -1,0 +1,367 @@
+✅ FULL WINDSURF SYSTEM PROMPT (COPY–PASTE READY)
+
+This is the complete end-to-end instruction block Windsurf will use to generate the entire VoltPanel project.
+
+WINDSURF MASTER PROMPT — Alresia VoltPanel
+
+Goal
+Build a full production-grade local server management panel called Alresia VoltPanel.
+It must install and behave like PostgreSQL, Redis, or Nginx:
+
+installable via Homebrew
+
+installable on Linux via .deb/.rpm
+
+installable on Windows via MSI
+
+runs as a system service on macOS, Linux, and Windows
+
+exposes an HTTP UI on localhost:<port>
+
+no external runtime needed (no Node, no PHP)
+
+single static Go binary with an embedded React UI
+
+Architecture Requirements
+Backend (Core Daemon)
+
+Language: Go
+
+Framework: Fiber (or Gin)
+
+Binary must embed the entire frontend using embed.
+
+Provide REST API:
+
+list local apps (Node/PHP projects)
+
+start/stop/restart processes
+
+view logs (real-time tail)
+
+file manager (read/write/delete)
+
+system metrics (CPU, RAM, disk, ports)
+
+configuration endpoints
+
+Process Management
+
+Use Go’s os/exec and background goroutines.
+Support:
+
+NodeJS apps
+
+PHP apps (php -S or PHP-FPM)
+
+Custom command runners
+
+All process metadata must be persisted in $HOME/.alresia-voltpanel/apps.json.
+
+Config Directory
+~/.alresia-voltpanel/
+config.json
+apps.json
+logs/
+runtime/
+
+Port Logic
+
+Default port: 7788
+If taken → auto-increment until available.
+
+Security
+
+Only bind to 127.0.0.1
+
+Require local token stored in config.json
+
+Reject all remote connections
+
+Frontend (Embedded UI)
+
+Framework: React + Vite
+
+UI served at /
+
+Styling: Tailwind + shadcn
+
+Pages:
+
+Dashboard (system metrics)
+
+Process Manager (start/stop apps)
+
+File Manager
+
+Logs (real-time tail)
+
+Settings (token regen, port change)
+
+Build output (dist/) must be embedded in Go binary.
+
+Cross-Platform Service Integration
+macOS
+
+Create a launchd plist
+
+Installed with Homebrew
+
+Runs automatically on OS boot
+
+Linux
+
+Provide a systemd service unit
+
+systemctl enable --now voltpanel
+
+Windows
+
+Create Windows service using NSSM or golang.org/x/sys/windows/svc
+
+Provide MSI installer through WiX
+
+Packaging & Releases
+
+Use goreleaser for:
+
+macOS (arm64 + amd64)
+
+Linux (deb + rpm)
+
+Windows (zip + msi)
+
+Homebrew formula
+
+GitHub release artifacts
+
+Repository Structure
+
+Use:
+
+cmd/voltpanel/main.go
+internal/server/_
+internal/agent/_
+internal/system/_
+internal/storage/_
+ui/ (React)
+goreleaser.yml
+Makefile
+packaging/
+formula/
+README.md
+
+Deliverables Windsurf Must Produce
+
+A complete Go daemon with:
+
+REST API
+
+embedded assets
+
+process control
+
+file manager
+
+log streaming
+
+metrics collector
+
+Full React/Vite UI
+
+All packaging files:
+
+Homebrew formula
+
+systemd unit
+
+launchd plist
+
+Windows MSI installer scripts
+
+goreleaser.yml (production-ready)
+
+A fully documented README with install/testing instructions
+
+CI pipeline using GitHub Actions
+
+Ability to run make build → produce working binary
+
+Ability to run goreleaser release --snapshot → produce full installers
+
+Quality Expectations
+
+Code must be clean, modular, and production-grade.
+
+No hardcoded paths.
+
+Software must run immediately after building.
+
+All endpoints must be documented.
+
+UI must be polished, not placeholder.
+
+Ensure the service is stable and resilient to crashes.
+
+MORE DETAILS
+
+SYSTEM INSTRUCTION: BUILD THE COMPLETE "ALRESIA VOLT PANEL" PRODUCT. FOLLOW THESE RULES PRECISELY. DO NOT CREATE EXTRA FILES OUTSIDE THE SPECIFIED REPO LAYOUT. DO NOT RESPOND WITH EXPLANATIONS — GENERATE THE REPO.
+
+PROJECT NAME: Alresia Volt Panel
+
+GOAL:
+Produce a production-grade, single-binary Go daemon named voltpanel with an embedded React + Vite UI. The binary must behave like a native service: installable (Homebrew/.pkg on macOS, .deb/.rpm on Linux, MSI on Windows), registerable as a system service (launchd/systemd/Windows Service), auto-startable, and expose a local-only web UI on port 7788 (auto-increment if port taken). No external runtime required to run the shipped binary.
+
+IMPORTANT GLOBAL RULES:
+
+1. Backend must be implemented in Go (Gin or Fiber allowed).
+2. Frontend must be React + Vite and compiled to dist/ and embedded into the Go binary via Go embed.
+3. The repo must be organized exactly as specified below. Do not place code at the repository root except for top-level build/config files listed.
+4. Use goreleaser config to produce cross-platform artifacts for macOS (arm64/amd64), Linux (deb/rpm), Windows (zip/msi) and a Homebrew formula entry.
+5. Default port = 7788; if in use, binary must probe and auto-increment until available (first fallback 7789, etc).
+6. Bind only to 127.0.0.1 by default and require a local token stored under user config to serve the UI/API.
+7. Persist runtime metadata under ~/.alresia-volt/ (config.json, apps.json, logs/, meta.db).
+8. Do not generate random TypeScript files at repo root. All TypeScript (if any for tooling) must live under ui/ or other specified subfolders.
+
+REPO LAYOUT (CREATE EXACTLY)
+/
+README.md
+go.mod
+goreleaser.yml
+Makefile
+packaging/ # packaging helpers (systemd, plist, WiX template, NSIS, Homebrew formula stub)
+formula/ # homebrew formula template
+cmd/voltpanel/
+main.go # entrypoint for the Go daemon
+internal/
+server/
+server.go # http handlers, static embed serving, auth middleware
+agent/
+manager.go # process manager (start/stop/restart, metadata store)
+system/
+service_unix.go # systemd/launchd integration helpers
+service_windows.go # Windows service helper or wrapper notes
+storage/
+store.go # config and sqlite wrapper
+metrics/
+metrics.go # CPU/RAM/disk/ports
+ws/
+ws.go # websocket logs/events
+ui/
+package.json
+tsconfig.json
+vite.config.ts
+src/
+main.tsx
+App.tsx
+pages/
+Dashboard.tsx
+Processes.tsx
+Files.tsx
+Logs.tsx
+Settings.tsx
+components/
+tailwind.config.js
+postcss.config.js
+build script: pnpm build -> outputs dist/ (bundled static files)
+packaging/
+devpanel.service # systemd unit template
+com.alresia.volt.plist # launchd plist template
+wix/ # WiX template for MSI
+nsis/ # NSIS script for .exe (optional)
+docs/
+architecture.md
+api.md
+install-testing.md
+
+BACKEND (GO) REQUIREMENTS
+
+- Use Gin or Fiber for HTTP; static files must be served from compiled embed FS (//go:embed dist/\*).
+- Provide REST API endpoints:
+  - GET /health
+  - POST /auth/token/verify
+  - GET /services — list registered projects
+  - POST /services/start — start service (payload: id, command, cwd, env)
+  - POST /services/stop
+  - POST /services/restart
+  - GET /processes
+  - GET /files/list?path=
+  - POST /files/upload
+  - POST /files/write
+  - DELETE /files
+  - GET /logs/:serviceId?tail=true
+- WebSocket: /ws/events for real-time logs and state changes.
+- Process runner must use os/exec with supervised goroutines, capture stdout/stderr streams, and persist process metadata to ~/.alresia-volt/apps.json and meta.db (SQLite).
+- Implement safe path whitelisting: prevent operations outside configured project roots (config bootstrapped by ~/.alresia-volt/config.json).
+- Implement token-based local auth: generate token on first run and store in config.json. Reject requests without valid token header.
+- On startup, create ~/.alresia-volt/ if missing with correct permissions.
+
+FRONTEND (React + Vite) REQUIREMENTS
+
+- Full React + TypeScript SPA with routes/pages listed in ui/src/pages.
+- Connect to backend REST and WS endpoints.
+- Provide features: process listing + controls, file browser with editor, log tailing, settings (regenerate token, change port), a dashboard with CPU/RAM/disk and port scan.
+- Build produces ui/dist which must be embedded into Go binary.
+- UI must attempt ws://localhost:<port>/ws/events and fallback to wss if TLS configured.
+
+SERVICE REGISTRATION
+
+- Provide templates/scripts to register the binary as a system service:
+  - Linux: systemd unit devpanel.service and systemctl enable --now.
+  - macOS: launchd plist template and launchctl notes.
+  - Windows: WiX installer + service registration via golang.org/x/sys/windows/svc or WinSW/NSSM wrapper instructions included.
+- Installer must create ~/.alresia-volt/ and start service automatically.
+
+PACKAGING & RELEASE (goreleaser)
+
+- Provide goreleaser.yml configured to:
+  - build for darwin/amd64 + darwin/arm64, linux/amd64, windows/amd64
+  - produce tar.gz / zip artifacts
+  - produce deb and rpm packages
+  - produce a Windows MSI (use WiX template)
+  - output Homebrew formula template in formula/ (brew tap info)
+- Include Makefile targets:
+  - make build → build local binary
+  - make dev → run backend + serve embedded UI if dist/ exists (or run ui dev during development)
+  - make release-snapshot → run goreleaser snapshot
+
+TESTING & QA
+
+- Unit tests for Go code (use testing package).
+- Integration test script: scripts/integration_test.sh (or PowerShell for Windows) that:
+  - boots binary on ephemeral port
+  - hits /health
+  - starts a simple dummy Node server via POST /services/start and verifies logs
+  - stops process and verifies state
+- Frontend: Vitest unit tests and Playwright E2E that runs against http://localhost:7788 and verifies file manager, start/stop and log tailing.
+- Provide CI config (GitHub Actions) that:
+  - runs make build
+  - runs unit tests
+  - runs integration tests in Linux container
+
+DOCUMENTATION DELIVERABLES
+
+- docs/install-testing.md with step-by-step installation + service registration + test checklist for macOS/Linux/Windows.
+- docs/api.md documenting every endpoint and WebSocket events.
+- README.md with project overview, quickstart (dev and install), packaging steps, and how to run goreleaser.
+
+DELIVERABLES (complete)
+
+1. Full source tree matching this spec.
+2. Working cmd/voltpanel that serves embedded UI at port 7788 and honors port fallback.
+3. ui/dist built and embedded via Go embed.
+4. packaging/ templates: systemd, plist, WiX/NSIS.
+5. goreleaser.yml producing deb/rpm/msi/zip/tar and Homebrew stub.
+6. Makefile with build/dev/release targets.
+7. docs/ with clear install/testing instructions.
+8. CI workflow for basic build/test.
+9. Integration test scripts that verify start/stop/log streaming.
+
+OPERATIONAL CONSTRAINTS:
+
+- Under no circumstances create arbitrary TypeScript files at repo root. All TS files must be under ui/ (frontend) or optional tooling directories. Any NodeJS/TS tooling must be confined to ui/ or packaging subfolders.
+- Keep production code in Go for backend. Do not produce a NodeJS backend.
+- Keep all packaging and service templates in packaging/ and formula/.
+
+COMPLETION CRITERIA:
+Return the repository as a zip or commit-ready file structure that passes make build and make dev locally (document how to run them). The built binary, when started, must respond to /health, serve the embedded UI, and accept a POST to /services/start to launch a process and stream logs via /ws/events.
