@@ -60,6 +60,39 @@ Not yet done from the original Phase 0 scope:
 - The module/binary/service rename items in §16/§17's Phase 0 description no longer apply
   per the naming decision above.
 
+All Phase 0 items are now done, including the two above (packaging cleanup done; full
+`make build` verified end-to-end with the real embedded UI, disk space was the only blocker
+and has since cleared).
+
+## Phase 1 progress log (2026-09-18, overnight autonomous run)
+
+Done and verified (`go build`/`vet`/`test` green; full `make build` + curl smoke test +
+`scripts/integration_test.sh` all exercised against the real binary):
+- SQLite storage (`modernc.org/sqlite`, pure-Go) with the full §6 schema created in one
+  migration (`internal/storage/migrations/0001_init.sql`) so later phases add repositories,
+  not schema churn. `apps.json` imports into the `services` table once, idempotently, on
+  first startup; the JSON file is never written again or deleted.
+- `server.go`'s inline routes decomposed into `internal/api/v1/*`; routes moved to
+  `/api/v1/*` with an aggressive cutover (no deprecated-alias period) since nothing has
+  shipped the old flat routes to real users yet.
+- `internal/security.SessionAuth`: session-cookie auth layered on the static token; the WS
+  hub checks the same cookie at handshake time ahead of Phase 0's first-message-frame
+  fallback. CSRF/Origin check on mutating requests; file deletes require `confirm=true`;
+  every mutating call writes an `audit_events` row.
+- Files API gained mkdir/move/copy. `GET /services` merges persisted + live state.
+- Fixed dead code in `internal/metrics.scanLocalPorts` (a 65535-port bind/close loop whose
+  result was discarded, flagged in the original review).
+- `ui/src/lib/{api,ws}.ts`: one typed client + one shared WS connection, replacing every
+  page's hand-rolled fetch/WebSocket calls. Pages updated to the new API; still the old
+  tab-switcher `App.tsx` (react-router migration deferred to whenever the first
+  deep-linkable detail view — a Project or Server page — actually lands, per §11's own
+  reasoning for why that's the trigger, not before).
+- go.mod bumped to go 1.25 (sqlite driver's transitive requirement); CI's go-version matched.
+
+Not done: nothing deferred from Phase 1's stated scope. Next: Phases 2/3/5/6 in parallel
+(their dependency is just Phase 1, and Docker/Services/Providers/Projects don't share files
+per §18's dependency graph note that they "don't share files").
+
 ## Environment notes from the review
 
 1. At review time the shell reported "no space left on device" for every command (even `echo`), which blocked `go build`/`goreleaser` verification. This appears to have cleared since (bash is working again as of this writing) — worth a `df -h` sanity check before any large build/install step.
