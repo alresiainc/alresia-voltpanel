@@ -35,6 +35,13 @@ type Deps struct {
 	// and report a clean "Docker not available" error rather than assuming
 	// a non-nil client means a live daemon.
 	Docker *docker.Client
+	// Domains and SSL are the Phase 4 (§17) providers -- hosts-file
+	// registration and the local CA. Interface-typed (rather than a
+	// concrete package like Docker above) so router tests can substitute
+	// a fake that never touches the real hosts file or OS trust store; see
+	// internal/api/v1/domains_test.go / ssl_test.go.
+	Domains providers.DomainProvider
+	SSL     providers.SSLProvider
 }
 
 func (d Deps) DB() *sql.DB { return d.Store.DB() }

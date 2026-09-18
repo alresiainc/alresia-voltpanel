@@ -62,4 +62,13 @@ func Mount(g *gin.Engine, d Deps) {
 	authed.GET("/docker/images", listDockerImages(d))
 	authed.GET("/docker/volumes", listDockerVolumes(d))
 	authed.GET("/docker/networks", listDockerNetworks(d))
+
+	authed.GET("/domains", listDomains(d))
+	authed.POST("/domains", createDomain(d))
+	authed.DELETE("/domains/:id", deleteDomain(d))
+	authed.GET("/domains/:id/conflicts", domainConflicts(d))
+
+	authed.POST("/ssl/ca/ensure", ensureCA(d))
+	authed.POST("/ssl/certificates", issueCertificate(d))
+	authed.POST("/ssl/ca/trust", trustCA(d))
 }

@@ -15,8 +15,10 @@ import (
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/docker"
+	"github.com/alresiainc/alresia-voltpanel/internal/providers/domainprovider/hosts"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/runtime/node"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/runtime/php"
+	"github.com/alresiainc/alresia-voltpanel/internal/providers/ssl/localca"
 	"github.com/alresiainc/alresia-voltpanel/internal/security"
 	"github.com/alresiainc/alresia-voltpanel/internal/storage"
 	"github.com/alresiainc/alresia-voltpanel/internal/ws"
@@ -75,7 +77,10 @@ func New(opt Options) (*Server, error) {
 		log.Printf("volt: docker provider unavailable: %v", err)
 	}
 
-	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient})
+	domainProvider := hosts.New()
+	sslProvider := localca.New(opt.CfgDir)
+
+	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Domains: domainProvider, SSL: sslProvider})
 
 	// Public, unversioned.
 	g.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
