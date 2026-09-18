@@ -1,7 +1,6 @@
 package server
 
 import (
-	"crypto/subtle"
 	"embed"
 	"io"
 	"io/fs"
@@ -10,8 +9,9 @@ import (
 	"strconv"
 	"strings"
 
+	v1 "github.com/alresiainc/alresia-voltpanel/internal/api/v1"
 	"github.com/alresiainc/alresia-voltpanel/internal/agent"
-	"github.com/alresiainc/alresia-voltpanel/internal/metrics"
+	"github.com/alresiainc/alresia-voltpanel/internal/security"
 	"github.com/alresiainc/alresia-voltpanel/internal/storage"
 	"github.com/alresiainc/alresia-voltpanel/internal/ws"
 	"github.com/gin-gonic/gin"
@@ -22,174 +22,76 @@ type Options struct {
 	Bind       string
 	Dev        bool
 	Token      string
+	// SessionSecret signs session cookies (see internal/security.SessionAuth).
+	SessionSecret string
 	EmbeddedFS embed.FS
 	CfgDir     string
 }
 
 type Server struct {
-	opt   Options
-	r     *gin.Engine
-	hub   *ws.Hub
-	mgr   *agent.Manager
-	store *storage.Store
+	opt Options
+	r   *gin.Engine
 }
 
+// New wires the daemon's subsystems (storage, process manager, WS hub,
+// session auth) together and mounts the versioned API (internal/api/v1)
+// plus the embedded-UI static fallback. Route definitions themselves live
+// in internal/api/v1, not here -- this file is transport/process glue only.
 func New(opt Options) (*Server, error) {
 	g := gin.New()
 	g.Use(gin.Logger(), gin.Recovery())
 	g.SetTrustedProxies(nil)
 
-	// Initialize subsystems
-	st := storage.NewStore(opt.CfgDir)
+	st, err := storage.NewStore(opt.CfgDir)
+	if err != nil {
+		return nil, err
+	}
 	mgr := agent.NewManager(st)
-	hub := ws.NewHub(opt.Token, opt.Dev)
+	session, err := security.NewSessionAuth(opt.SessionSecret)
+	if err != nil {
+		return nil, err
+	}
+	hub := ws.NewHub(opt.Token, opt.Dev, session)
 	go hub.Run()
 
-	s := &Server{opt: opt, r: g, hub: hub, mgr: mgr, store: st}
+	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev})
 
-	// Public endpoints
+	// Public, unversioned.
 	g.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
 
-	// Auth for /ws/events happens post-upgrade, inside ws.ServeWs: browsers
-	// cannot set custom headers on a WebSocket handshake, so the usual
-	// X-Volt-Token header check below can't apply here.
-	g.GET("/ws/events", func(c *gin.Context) {
-		ws.ServeWs(hub, c.Writer, c.Request)
-	})
+	mountStaticUI(g, opt.EmbeddedFS)
 
-	// Auth middleware
-	auth := func(c *gin.Context) {
-		if !s.authorized(c.Request) && !opt.Dev {
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-		c.Next()
-	}
-
-	api := g.Group("/")
-	api.Use(auth)
-
-	api.POST("/auth/token/verify", func(c *gin.Context) {
-		c.JSON(200, gin.H{"ok": true})
-	})
-
-	api.GET("/services", func(c *gin.Context) {
-		apps := st.ListApps()
-		c.JSON(200, apps)
-	})
-	api.POST("/services/start", func(c *gin.Context) {
-		var req agent.StartRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(400, gin.H{"error": err.Error()})
-			return
-		}
-		proc, err := mgr.Start(req, s.hub)
-		if err != nil {
-			c.JSON(400, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(200, proc)
-	})
-	api.POST("/services/stop", func(c *gin.Context) {
-		var req struct{ ID string `json:"id"` }
-		if err := c.ShouldBindJSON(&req); err != nil { c.JSON(400, gin.H{"error": err.Error()}); return }
-		if err := mgr.Stop(req.ID); err != nil { c.JSON(400, gin.H{"error": err.Error()}); return }
-		c.JSON(200, gin.H{"ok": true})
-	})
-	api.POST("/services/restart", func(c *gin.Context) {
-		var req struct{ ID string `json:"id"` }
-		if err := c.ShouldBindJSON(&req); err != nil { c.JSON(400, gin.H{"error": err.Error()}); return }
-		if err := mgr.Restart(req.ID, s.hub); err != nil { c.JSON(400, gin.H{"error": err.Error()}); return }
-		c.JSON(200, gin.H{"ok": true})
-	})
-	api.GET("/processes", func(c *gin.Context) { c.JSON(200, mgr.List()) })
-
-	// Files
-	api.GET("/files/list", func(c *gin.Context) {
-		p := c.Query("path")
-		list, err := st.ListPath(p)
-		if err != nil { c.JSON(400, gin.H{"error": err.Error()}); return }
-		c.JSON(200, list)
-	})
-	api.POST("/files/write", func(c *gin.Context) {
-		var req struct{ Path, Content string }
-		if err := c.ShouldBindJSON(&req); err != nil { c.JSON(400, gin.H{"error": err.Error()}); return }
-		if err := st.WriteFile(req.Path, []byte(req.Content)); err != nil { c.JSON(400, gin.H{"error": err.Error()}); return }
-		c.JSON(200, gin.H{"ok": true})
-	})
-	api.DELETE("/files", func(c *gin.Context) {
-		p := c.Query("path")
-		if err := st.DeletePath(p); err != nil { c.JSON(400, gin.H{"error": err.Error()}); return }
-		c.JSON(200, gin.H{"ok": true})
-	})
-	api.POST("/files/upload", func(c *gin.Context) {
-		p := c.Query("path")
-		if p == "" { p = c.PostForm("path") }
-		file, err := c.FormFile("file")
-		if err != nil { c.JSON(400, gin.H{"error": err.Error()}); return }
-		f, err := file.Open()
-		if err != nil { c.JSON(400, gin.H{"error": err.Error()}); return }
-		defer f.Close()
-		b, err := io.ReadAll(f)
-		if err != nil { c.JSON(500, gin.H{"error": err.Error()}); return }
-		if err := st.WriteFile(p, b); err != nil { c.JSON(400, gin.H{"error": err.Error()}); return }
-		c.JSON(200, gin.H{"ok": true})
-	})
-
-	// Logs
-	api.GET("/logs/:id", func(c *gin.Context) {
-		id := c.Param("id")
-		tail := c.Query("tail") == "true"
-		data, err := mgr.ReadLog(id, tail)
-		if err != nil { c.JSON(400, gin.H{"error": err.Error()}); return }
-		c.Data(200, "text/plain; charset=utf-8", data)
-	})
-
-	// Metrics
-	api.GET("/metrics", func(c *gin.Context) {
-		m, err := metrics.Collect()
-		if err != nil { c.JSON(500, gin.H{"error": err.Error()}); return }
-		c.JSON(200, m)
-	})
-
-	// Static UI from embedded FS under cmd/voltpanel/dist
-	sub, err := fs.Sub(opt.EmbeddedFS, "dist")
-	if err == nil {
-		g.NoRoute(func(c *gin.Context) {
-			p := c.Request.URL.Path
-			if p == "/" || !strings.Contains(filepath.Base(p), ".") {
-				// serve index.html for SPA routes
-				file, err := sub.Open("index.html")
-				if err == nil {
-					defer file.Close()
-					stat, _ := file.Stat()
-					// fs.Sub's wrapper type doesn't always preserve io.Seeker
-					// (which ServeContent requires), so fall back to a plain copy.
-					if rs, ok := file.(io.ReadSeeker); ok {
-						http.ServeContent(c.Writer, c.Request, "index.html", stat.ModTime(), rs)
-					} else {
-						c.Writer.Header().Set("Content-Type", "text/html; charset=utf-8")
-						_, _ = io.Copy(c.Writer, file)
-					}
-					return
-				}
-			}
-			http.FileServer(http.FS(sub)).ServeHTTP(c.Writer, c.Request)
-		})
-	}
-
-	return s, nil
+	return &Server{opt: opt, r: g}, nil
 }
 
-func (s *Server) authorized(r *http.Request) bool {
-	if s.opt.Dev { // allow from localhost in dev
-		return true
+// mountStaticUI serves the embedded Vite build (cmd/voltpanel/dist) for
+// everything the API router above didn't claim, falling back to index.html
+// for SPA client-side routes.
+func mountStaticUI(g *gin.Engine, embedded embed.FS) {
+	sub, err := fs.Sub(embedded, "dist")
+	if err != nil {
+		return
 	}
-	t := r.Header.Get("X-Volt-Token")
-	if t == "" {
-		t = r.Header.Get("x-volt-token")
-	}
-	return t != "" && subtle.ConstantTimeCompare([]byte(t), []byte(s.opt.Token)) == 1
+	g.NoRoute(func(c *gin.Context) {
+		p := c.Request.URL.Path
+		if p == "/" || !strings.Contains(filepath.Base(p), ".") {
+			file, err := sub.Open("index.html")
+			if err == nil {
+				defer file.Close()
+				stat, _ := file.Stat()
+				// fs.Sub's wrapper type doesn't always preserve io.Seeker
+				// (which ServeContent requires), so fall back to a plain copy.
+				if rs, ok := file.(io.ReadSeeker); ok {
+					http.ServeContent(c.Writer, c.Request, "index.html", stat.ModTime(), rs)
+				} else {
+					c.Writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+					_, _ = io.Copy(c.Writer, file)
+				}
+				return
+			}
+		}
+		http.FileServer(http.FS(sub)).ServeHTTP(c.Writer, c.Request)
+	})
 }
 
 func (s *Server) Run() error {

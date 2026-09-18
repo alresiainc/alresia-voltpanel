@@ -1,13 +1,12 @@
 package storage
 
 import (
+	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/alresiainc/alresia-voltpanel/internal/security"
@@ -18,14 +17,22 @@ type Config struct {
 	Token string `json:"token"`
 	Port  int    `json:"port"`
 	CreatedAt time.Time `json:"createdAt"`
+	// SessionSecret signs short-lived session tokens issued on top of Token
+	// (see internal/security.SessionAuth). Generated once and persisted;
+	// rotating it invalidates all outstanding sessions.
+	SessionSecret string `json:"sessionSecret,omitempty"`
 }
 
 type Store struct {
 	cfgDir string
-	mu sync.Mutex
-	apps map[string]App
-	fs *security.Sandbox
+	db     *sql.DB
+	fs     *security.Sandbox
 }
+
+// DB exposes the underlying SQLite connection for repositories in later
+// phases (Project, Server, Deployment, ...) that don't yet have their own
+// Store-level wrapper.
+func (s *Store) DB() *sql.DB { return s.db }
 
 type App struct {
 	ID string `json:"id"`
@@ -45,7 +52,7 @@ type App struct {
 // NewStore creates a Store whose file-manager operations are sandboxed to
 // the user's home directory (no Project concept exists yet to scope it
 // more tightly to).
-func NewStore(cfgDir string) *Store {
+func NewStore(cfgDir string) (*Store, error) {
 	root, err := os.UserHomeDir()
 	if err != nil {
 		root = cfgDir
@@ -55,15 +62,21 @@ func NewStore(cfgDir string) *Store {
 
 // NewStoreWithRoot is like NewStore but lets callers (mainly tests) choose
 // the file-manager sandbox root explicitly.
-func NewStoreWithRoot(cfgDir, fileRoot string) *Store {
-	s := &Store{cfgDir: cfgDir, apps: map[string]App{}}
-	s.loadApps()
+func NewStoreWithRoot(cfgDir, fileRoot string) (*Store, error) {
+	db, err := OpenSQLite(cfgDir)
+	if err != nil {
+		return nil, fmt.Errorf("open storage: %w", err)
+	}
+	if err := importLegacyApps(db, cfgDir); err != nil {
+		log.Printf("volt: warning: failed to import legacy apps.json: %v", err)
+	}
+	s := &Store{cfgDir: cfgDir, db: db}
 	sb, err := security.NewSandbox(fileRoot)
 	if err != nil {
 		sb, _ = security.NewSandbox(cfgDir)
 	}
 	s.fs = sb
-	return s
+	return s, nil
 }
 
 // legacyConfigDirNames are prior config-directory names Volt (né VoltPanel)
@@ -124,9 +137,18 @@ func LoadOrInitConfig() (Config, error) {
 	if _, err := os.Stat(p); err == nil {
 		b, err := os.ReadFile(p); if err != nil { return Config{}, err }
 		var c Config; if err := json.Unmarshal(b, &c); err != nil { return Config{}, err }
+		if c.SessionSecret == "" {
+			// Backfill for configs written before session auth existed.
+			secret, err := security.NewSessionSecret()
+			if err != nil { return Config{}, err }
+			c.SessionSecret = secret
+			if err := SaveConfig(c); err != nil { return Config{}, err }
+		}
 		return c, nil
 	}
-	c := Config{Token: uuid.NewString(), Port: 7788, CreatedAt: time.Now()}
+	secret, err := security.NewSessionSecret()
+	if err != nil { return Config{}, err }
+	c := Config{Token: uuid.NewString(), Port: 7788, CreatedAt: time.Now(), SessionSecret: secret}
 	if err := SaveConfig(c); err != nil { return Config{}, err }
 	return c, nil
 }
@@ -137,39 +159,27 @@ func SaveConfig(c Config) error {
 	return os.WriteFile(configPath(d), b, 0o600)
 }
 
-func (s *Store) loadApps() error {
-	p := appsPath(s.cfgDir)
-	b, err := os.ReadFile(p)
+// UpsertApp, GetApp and ListApps are backed by SQLite (see services_repo.go)
+// as of Phase 1. Signatures are unchanged so internal/agent.Manager, the
+// sole caller, needed no changes -- Phase 5 replaces this whole App/Manager
+// concept with the formalized Service domain entity.
+func (s *Store) UpsertApp(a App) error { return upsertService(s.db, a) }
+
+func (s *Store) GetApp(id string) (App, bool) {
+	a, ok, err := getService(s.db, id)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) { s.apps = map[string]App{}; return nil }
-		return err
+		log.Printf("volt: GetApp(%s): %v", id, err)
+		return App{}, false
 	}
-	var out struct{ Apps []App `json:"apps"` }
-	if err := json.Unmarshal(b, &out); err != nil { return err }
-	m := map[string]App{}
-	for _, a := range out.Apps { m[a.ID] = a }
-	s.apps = m
-	return nil
+	return a, ok
 }
 
-func (s *Store) saveApps() error {
-	apps := make([]App, 0, len(s.apps))
-	for _, a := range s.apps { apps = append(apps, a) }
-	b, _ := json.MarshalIndent(struct{ Apps []App `json:"apps"` }{apps}, "", "  ")
-	return os.WriteFile(appsPath(s.cfgDir), b, 0o644)
-}
-
-func (s *Store) UpsertApp(a App) error {
-	s.mu.Lock(); defer s.mu.Unlock()
-	s.apps[a.ID] = a
-	return s.saveApps()
-}
-
-func (s *Store) GetApp(id string) (App, bool) { s.mu.Lock(); defer s.mu.Unlock(); a, ok := s.apps[id]; return a, ok }
 func (s *Store) ListApps() []App {
-	s.mu.Lock(); defer s.mu.Unlock()
-	out := make([]App, 0, len(s.apps))
-	for _, a := range s.apps { out = append(out, a) }
+	out, err := listServices(s.db)
+	if err != nil {
+		log.Printf("volt: ListApps: %v", err)
+		return nil
+	}
 	return out
 }
 
@@ -204,4 +214,33 @@ func (s *Store) DeletePath(p string) error {
 		return fmt.Errorf("refusing to delete the file-manager root")
 	}
 	return os.RemoveAll(real)
+}
+
+func (s *Store) Mkdir(p string) error {
+	real, err := s.fs.Resolve(p)
+	if err != nil { return err }
+	return os.MkdirAll(real, 0o755)
+}
+
+func (s *Store) Move(src, dst string) error {
+	realSrc, err := s.fs.Resolve(src)
+	if err != nil { return err }
+	realDst, err := s.fs.Resolve(dst)
+	if err != nil { return err }
+	return os.Rename(realSrc, realDst)
+}
+
+func (s *Store) Copy(src, dst string) error {
+	realSrc, err := s.fs.Resolve(src)
+	if err != nil { return err }
+	realDst, err := s.fs.Resolve(dst)
+	if err != nil { return err }
+	info, err := os.Stat(realSrc)
+	if err != nil { return err }
+	if info.IsDir() {
+		return fmt.Errorf("copying directories is not yet supported")
+	}
+	b, err := os.ReadFile(realSrc)
+	if err != nil { return err }
+	return os.WriteFile(realDst, b, info.Mode())
 }

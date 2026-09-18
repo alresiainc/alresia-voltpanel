@@ -1,26 +1,18 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
+import { api } from '../lib/api'
+import { wsClient } from '../lib/ws'
 
-export default function Logs({ headers, token }: { headers: Record<string,string>, token: string }) {
+export default function Logs() {
   const [id, setId] = useState('')
   const [text, setText] = useState('')
-  const wsRef = useRef<WebSocket | null>(null)
 
-  const openWs = () => {
-    wsRef.current?.close()
-    const url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/events'
-    const ws = new WebSocket(url)
-    // Browsers can't set custom headers on a WS handshake, so auth goes
-    // over the socket itself as the first message (see internal/ws).
-    ws.onopen = () => { ws.send(JSON.stringify({ type: 'auth', token })) }
-    ws.onmessage = (e) => {
-      try { const data = JSON.parse(e.data); if (data.type === 'log' && (!id || data.id === id)) setText((t)=>t + data.data) } catch {}
-    }
-    wsRef.current = ws
-  }
+  useEffect(() => {
+    return wsClient.subscribe((data) => {
+      if (data.type === 'log' && (!id || data.id === id)) setText((t) => t + data.data)
+    })
+  }, [id])
 
-  useEffect(() => { openWs(); return () => wsRef.current?.close() }, [token])
-
-  const load = () => fetch(`/logs/${encodeURIComponent(id)}?tail=true`, { headers }).then(r=>r.text()).then(setText)
+  const load = () => api.serviceLogs(id, true).then(setText).catch(() => {})
 
   return (
     <div className="space-y-2">

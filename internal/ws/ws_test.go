@@ -22,7 +22,7 @@ func dial(t *testing.T, srv *httptest.Server) *websocket.Conn {
 }
 
 func TestServeWsRejectsBadAuth(t *testing.T) {
-	hub := NewHub("secret", false)
+	hub := NewHub("secret", false, nil)
 	go hub.Run()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ServeWs(hub, w, r)
@@ -42,7 +42,7 @@ func TestServeWsRejectsBadAuth(t *testing.T) {
 }
 
 func TestServeWsAcceptsGoodAuthAndBroadcasts(t *testing.T) {
-	hub := NewHub("secret", false)
+	hub := NewHub("secret", false, nil)
 	go hub.Run()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ServeWs(hub, w, r)
@@ -71,7 +71,7 @@ func TestServeWsAcceptsGoodAuthAndBroadcasts(t *testing.T) {
 }
 
 func TestServeWsDevModeSkipsAuth(t *testing.T) {
-	hub := NewHub("secret", true)
+	hub := NewHub("secret", true, nil)
 	go hub.Run()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ServeWs(hub, w, r)

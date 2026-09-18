@@ -42,12 +42,13 @@ func main() {
 	_ = storage.SaveConfig(cfg)
 
 	srv, err := server.New(server.Options{
-		Port:       port,
-		Dev:        *devFlag,
-		Bind:       "127.0.0.1",
-		Token:      cfg.Token,
-		EmbeddedFS: embeddedUI,
-		CfgDir:     cfgDir,
+		Port:          port,
+		Dev:           *devFlag,
+		Bind:          "127.0.0.1",
+		Token:         cfg.Token,
+		SessionSecret: cfg.SessionSecret,
+		EmbeddedFS:    embeddedUI,
+		CfgDir:        cfgDir,
 	})
 	if err != nil {
 		log.Fatalf("failed to init server: %v", err)

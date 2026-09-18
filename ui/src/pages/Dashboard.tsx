@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react'
+import { api, Metrics } from '../lib/api'
 
-export default function Dashboard({ headers }: { headers: Record<string,string>}) {
-  const [metrics, setMetrics] = useState<any>(null)
+export default function Dashboard() {
+  const [metrics, setMetrics] = useState<Metrics | null>(null)
   useEffect(() => {
-    fetch('/metrics', { headers }).then(r=>r.json()).then(setMetrics).catch(()=>{})
-  }, [headers])
+    api.systemMetrics().then(setMetrics).catch(() => {})
+  }, [])
   if (!metrics) return <div>Loading metrics...</div>
   return (
     <div className="grid gap-4 grid-cols-2">

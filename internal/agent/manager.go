@@ -147,6 +147,15 @@ func (m *Manager) List() []ProcInfo {
 	return out
 }
 
+// Get returns the live process info for id, if the manager has it running
+// (or has run it since the daemon started) in this process's lifetime.
+func (m *Manager) Get(id string) (ProcInfo, bool) {
+	m.mu.Lock(); defer m.mu.Unlock()
+	p, ok := m.procs[id]
+	if !ok { return ProcInfo{}, false }
+	return p.info, true
+}
+
 func (m *Manager) ReadLog(id string, tail bool) ([]byte, error) {
 	p, ok := m.store.GetApp(id)
 	if !ok { return nil, fmt.Errorf("unknown id: %s", id) }

@@ -65,7 +65,8 @@ func TestMigrateLegacyDirNoopWhenNewDirExists(t *testing.T) {
 func TestStoreFileSandboxRejectsTraversal(t *testing.T) {
 	root := t.TempDir()
 	cfgDir := t.TempDir()
-	s := NewStoreWithRoot(cfgDir, root)
+	s, err := NewStoreWithRoot(cfgDir, root)
+	if err != nil { t.Fatal(err) }
 
 	if err := s.WriteFile("../outside.txt", []byte("x")); err == nil {
 		t.Fatal("expected traversal write to be rejected")
@@ -78,7 +79,8 @@ func TestStoreFileSandboxRejectsTraversal(t *testing.T) {
 func TestStoreDeletePathRefusesRoot(t *testing.T) {
 	root := t.TempDir()
 	cfgDir := t.TempDir()
-	s := NewStoreWithRoot(cfgDir, root)
+	s, err := NewStoreWithRoot(cfgDir, root)
+	if err != nil { t.Fatal(err) }
 
 	if err := s.DeletePath(""); err == nil {
 		t.Fatal("expected deleting the sandbox root to be rejected")
@@ -91,7 +93,8 @@ func TestStoreDeletePathRefusesRoot(t *testing.T) {
 func TestStoreFileRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	cfgDir := t.TempDir()
-	s := NewStoreWithRoot(cfgDir, root)
+	s, err := NewStoreWithRoot(cfgDir, root)
+	if err != nil { t.Fatal(err) }
 
 	if err := s.WriteFile("hello.txt", []byte("hi")); err != nil {
 		t.Fatal(err)

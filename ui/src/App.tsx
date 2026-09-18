@@ -1,24 +1,32 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import Dashboard from './pages/Dashboard'
 import Processes from './pages/Processes'
 import Files from './pages/Files'
 import Logs from './pages/Logs'
 import Settings from './pages/Settings'
+import { setToken as setApiToken, api } from './lib/api'
+import { wsClient } from './lib/ws'
 
 function useToken() {
   const [token, setToken] = useState<string>('')
   useEffect(() => {
-    // In dev, allow empty; otherwise ask user to paste token or store in localStorage
     const t = localStorage.getItem('voltToken') || ''
     setToken(t)
   }, [])
-  return { token, setToken }
+  const update = (t: string) => {
+    setToken(t)
+    localStorage.setItem('voltToken', t)
+    setApiToken(t)
+    api.verifyToken(t).catch(() => {}) // establishes the session cookie; failures surface per-request
+    wsClient.connect(t)
+  }
+  useEffect(() => { if (token) update(token) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  return { token, setToken: update }
 }
 
 export default function App() {
   const [tab, setTab] = useState<'dash'|'proc'|'files'|'logs'|'settings'>('dash')
   const { token, setToken } = useToken()
-  const headers = useMemo(() => token ? { 'X-Volt-Token': token } : {}, [token])
 
   return (
     <div className="min-h-screen">
@@ -29,15 +37,15 @@ export default function App() {
         <button onClick={() => setTab('logs')}>Logs</button>
         <button onClick={() => setTab('settings')}>Settings</button>
         <div className="ml-auto flex items-center gap-2">
-          <input placeholder="Token" value={token} onChange={e=>{setToken(e.target.value); localStorage.setItem('voltToken', e.target.value)}} className="border px-2 py-1 text-sm" />
+          <input placeholder="Token" value={token} onChange={e=>setToken(e.target.value)} className="border px-2 py-1 text-sm" />
         </div>
       </nav>
       <main className="p-4">
-        {tab==='dash' && <Dashboard headers={headers} />}
-        {tab==='proc' && <Processes headers={headers} />}
-        {tab==='files' && <Files headers={headers} />}
-        {tab==='logs' && <Logs headers={headers} token={token} />}
-        {tab==='settings' && <Settings headers={headers} />}
+        {tab==='dash' && <Dashboard />}
+        {tab==='proc' && <Processes />}
+        {tab==='files' && <Files />}
+        {tab==='logs' && <Logs />}
+        {tab==='settings' && <Settings />}
       </main>
     </div>
   )

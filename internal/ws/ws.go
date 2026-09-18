@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alresiainc/alresia-voltpanel/internal/security"
 	"github.com/gorilla/websocket"
 )
 
@@ -16,13 +17,19 @@ type Hub struct {
 	mu sync.Mutex
 	token string
 	dev bool
+	session *security.SessionAuth
 }
 
 // NewHub creates a Hub. token is the shared secret clients must present in
 // their first WebSocket message before being allowed to join; dev disables
-// that check (mirrors the HTTP API's dev-mode auth bypass).
-func NewHub(token string, dev bool) *Hub {
-	return &Hub{clients: map[*websocket.Conn]bool{}, broadcast: make(chan []byte, 1024), token: token, dev: dev}
+// that check (mirrors the HTTP API's dev-mode auth bypass). session, if
+// non-nil, lets a client authenticate via the same session cookie the HTTP
+// API accepts (checked at handshake time, before the first-message fallback
+// below is even needed) -- browsers attach cookies automatically on a
+// same-origin WS upgrade, so once a session exists there's no need to also
+// send the raw token over the socket.
+func NewHub(token string, dev bool, session *security.SessionAuth) *Hub {
+	return &Hub{clients: map[*websocket.Conn]bool{}, broadcast: make(chan []byte, 1024), token: token, dev: dev, session: session}
 }
 
 func (h *Hub) Run() {
@@ -53,7 +60,7 @@ func ServeWs(h *Hub, w http.ResponseWriter, r *http.Request) {
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil { return }
 
-	if !h.authenticate(c) {
+	if !h.authenticateRequest(r) && !h.authenticate(c) {
 		_ = c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "unauthorized"))
 		_ = c.Close()
 		return
@@ -77,6 +84,19 @@ func ServeWs(h *Hub, w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
+}
+
+// authenticateRequest checks the session cookie on the original HTTP
+// upgrade request, before the connection is even accepted as a WS peer.
+func (h *Hub) authenticateRequest(r *http.Request) bool {
+	if h.dev || h.session == nil {
+		return false
+	}
+	cookie, err := r.Cookie(security.SessionCookieName)
+	if err != nil {
+		return false
+	}
+	return h.session.Verify(cookie.Value)
 }
 
 func (h *Hub) authenticate(c *websocket.Conn) bool {
