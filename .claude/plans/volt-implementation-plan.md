@@ -89,9 +89,59 @@ Done and verified (`go build`/`vet`/`test` green; full `make build` + curl smoke
   reasoning for why that's the trigger, not before).
 - go.mod bumped to go 1.25 (sqlite driver's transitive requirement); CI's go-version matched.
 
-Not done: nothing deferred from Phase 1's stated scope. Next: Phases 2/3/5/6 in parallel
-(their dependency is just Phase 1, and Docker/Services/Providers/Projects don't share files
-per §18's dependency graph note that they "don't share files").
+Not done: nothing deferred from Phase 1's stated scope.
+
+## Phases 2/3/5/6 progress log (2026-09-18, parallel overnight run)
+
+Built in parallel (isolated git worktrees, one per phase, merged back into `main`
+sequentially with manual conflict resolution where they touched shared files like
+`router.go`/`App.tsx`/`deps.go`/`server.go`). All green after every merge:
+`go build`/`vet`/`test` (including `-race` for Phase 5, cross-compiled clean for
+linux+windows), UI `tsc --noEmit`, and a live end-to-end smoke test of the built binary
+exercising services/runtimes/projects/docker together.
+
+- **Phase 2 (Providers + Node/PHP)**: `internal/providers/contract.go` defines all nine
+  §7 interfaces (only RuntimeProvider implemented); real Node detection via `node
+  --version` + nvm-managed installs, real PHP detection via Homebrew/update-alternatives.
+  Verified against this machine's actual installs (3 nvm Node versions, PHP 8.2.23 via
+  AMPPS) -- read-only detection only, no installs/removals performed. `internal/domain/runtime`
+  persists results to the `runtimes`/`runtime_versions` tables. `GET/POST /api/v1/runtimes/*`
+  + a Runtimes UI page.
+- **Phase 3 (Projects)**: `internal/domain/project` + an extensible framework-detection
+  engine (Laravel/Next.js/generic Node/generic PHP, registry-based so adding a framework
+  never touches existing detectors), driven by real `testdata/*-fixture` marker files.
+  `internal/storage/migrations/0002_project_detection.sql` adds detected_kind/run_command
+  columns. `GET/POST/DELETE /api/v1/projects/*` + a Projects UI page.
+- **Phase 5 (Services + real startup)**: `internal/domain/service` replaces
+  `internal/agent` entirely -- graceful stop (SIGTERM, then timeout, then force-kill),
+  crash detection with a restart-policy + backoff, Kahn's-algorithm dependency-ordered
+  autostart with cycle detection, wired into `cmd/voltpanel/main.go` right after
+  `server.New()`. `internal/platform/{darwin,linux,windows}` replace `internal/system`'s
+  no-op stubs with real launchd/systemd-user/Windows-SCM registration code --
+  file-generation is fully unit-tested against temp dirs, but **no real service was
+  installed on this machine** (independently verified: `~/Library/LaunchAgents`,
+  `launchctl list`, `~/.config/systemd/user/` all checked clean of any volt entries
+  after the merge). `internal/storage/migrations/0003_service_lifecycle.sql` adds
+  restart-policy/graceful-timeout columns (renumbered from a colliding `0002_*.sql` --
+  the Phase 3 and Phase 5 agents independently created migration files both named
+  `0002_*.sql` in their isolated worktrees, which would have silently dropped one
+  migration's columns entirely since the migration runner keys by the numeric filename
+  prefix; caught and fixed during the merge, before it ever reached a running database).
+- **Phase 6 (Docker)**: `internal/providers/docker` -- a minimal stdlib-only Engine API
+  client over the Unix socket (deliberately not the full moby/docker SDK), covering
+  containers/images/volumes/networks/exec/logs, grouped by Compose project label. This
+  machine has the Docker CLI but no daemon running; verified the "Docker not available"
+  path returns a clean `503`, not a 500, both in tests and against the live built binary.
+  `GET/POST /api/v1/docker/*` + a Docker UI page.
+
+Not done / deferred: nothing from these four phases' stated scope. Windows service
+registration is cross-compile-verified only (`GOOS=windows go build`), never executed --
+no Windows machine available here.
+
+Next: Phase 4 (Domains+SSL, depends on Phase 3 ✓) and Phase 7 (Remote/SSH, depends on
+Phase 5's ServiceLifecycle shape ✓ + Phase 1's Secret model ✓) can now start in parallel.
+Phase 11 (Extensions) also unblocked (needs Phase 2's contracts ✓). Phase 8 (Git) needs
+Phase 3 ✓ + Phase 1 ✓ and can start too. Phase 9/10 still wait on 7+8.
 
 ## Environment notes from the review
 
