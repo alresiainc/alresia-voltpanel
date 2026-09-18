@@ -22,6 +22,13 @@ func Mount(g *gin.Engine, d Deps) {
 
 	api.POST("/auth/token/verify", verifyToken(d))
 
+	// Webhook triggers authenticate via their own HMAC signature (verified
+	// inside pipelineWebhook), not the session/token middleware below --
+	// GitHub/GitLab/Bitbucket can't present our session cookie or bearer
+	// token. csrfMiddleware still applies but is a no-op here since a real
+	// webhook sender never sets an Origin header.
+	api.POST("/pipelines/:id/webhook", pipelineWebhook(d))
+
 	authed := api.Group("/")
 	authed.Use(authMiddleware(d))
 
@@ -104,4 +111,10 @@ func Mount(g *gin.Engine, d Deps) {
 	authed.POST("/deployments", deploy(d))
 	authed.GET("/deployments/:id/log", deploymentLog(d))
 	authed.POST("/deployments/:id/rollback", rollbackDeployment(d))
+
+	authed.GET("/pipelines", listPipelines(d))
+	authed.POST("/pipelines", createPipeline(d))
+	authed.DELETE("/pipelines/:id", deletePipeline(d))
+	authed.POST("/pipelines/:id/run", runPipelineManual(d))
+	authed.GET("/pipelines/:id/runs", listPipelineRuns(d))
 }

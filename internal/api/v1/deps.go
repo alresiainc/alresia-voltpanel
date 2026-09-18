@@ -10,6 +10,7 @@ import (
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/deployment"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/extension"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
+	"github.com/alresiainc/alresia-voltpanel/internal/pipeline"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/docker"
 	"github.com/alresiainc/alresia-voltpanel/internal/security"
@@ -67,6 +68,9 @@ type Deps struct {
 	// above. Never nil in production; tests build their own Engine value
 	// wired to a fake RemoteProvider.
 	DeployEngine *deployment.Engine
+	// PipelineEngine runs Phase 10 pipeline step definitions -- its
+	// "deploy" step kind delegates straight to DeployEngine above.
+	PipelineEngine *pipeline.Engine
 }
 
 func (d Deps) DB() *sql.DB { return d.Store.DB() }

@@ -17,6 +17,7 @@ import (
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/integration"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/server"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
+	"github.com/alresiainc/alresia-voltpanel/internal/pipeline"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/docker"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/domainprovider/hosts"
@@ -109,7 +110,13 @@ func New(opt Options) (*Server, error) {
 		LogDir:        filepath.Join(opt.CfgDir, "logs", "deployments"),
 	}
 
-	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Domains: domainProvider, SSL: sslProvider, Extensions: extensions, Secrets: secrets, Remote: sshProvider, DeployEngine: deployEngine})
+	pipelineEngine := &pipeline.Engine{
+		Remote:       sshProvider,
+		Servers:      server.NewRepository(st.DB()),
+		DeployEngine: deployEngine,
+	}
+
+	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Domains: domainProvider, SSL: sslProvider, Extensions: extensions, Secrets: secrets, Remote: sshProvider, DeployEngine: deployEngine, PipelineEngine: pipelineEngine})
 
 	// Public, unversioned.
 	g.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })

@@ -252,6 +252,38 @@ export interface Deployment {
   migrationRollbackSupported: boolean
 }
 
+export interface Pipeline {
+  id: string
+  projectId: string
+  name: string
+  definitionYaml: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PipelineCreated extends Pipeline {
+  webhookSecret: string
+  webhookPath: string
+}
+
+export interface PipelineStepResult {
+  name: string
+  kind: string
+  status: string
+  output: string
+  durationMs: number
+}
+
+export interface PipelineRun {
+  id: string
+  pipelineId: string
+  triggerKind: string
+  status: string
+  steps: PipelineStepResult[]
+  startedAt?: string
+  finishedAt?: string
+}
+
 export const api = {
   verifyToken: (token: string) =>
     request<{ ok: boolean }>('/auth/token/verify', {
@@ -357,4 +389,11 @@ export const api = {
   deploy: (targetId: string) => request<Deployment>('/deployments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId }) }),
   deploymentLog: (id: string) => request<string>(`/deployments/${encodeURIComponent(id)}/log`),
   rollbackDeployment: (id: string) => request<Deployment>(`/deployments/${encodeURIComponent(id)}/rollback`, { method: 'POST' }),
+
+  listPipelines: (projectId: string) => request<Pipeline[]>(`/pipelines?projectId=${encodeURIComponent(projectId)}`),
+  createPipeline: (projectId: string, name: string, definitionYaml: string) =>
+    request<PipelineCreated>('/pipelines', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectId, name, definitionYaml }) }),
+  deletePipeline: (id: string) => request(`/pipelines/${encodeURIComponent(id)}?confirm=true`, { method: 'DELETE' }),
+  runPipeline: (id: string) => request<PipelineRun>(`/pipelines/${encodeURIComponent(id)}/run`, { method: 'POST' }),
+  listPipelineRuns: (id: string) => request<PipelineRun[]>(`/pipelines/${encodeURIComponent(id)}/runs`),
 }
