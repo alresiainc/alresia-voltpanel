@@ -1,6 +1,9 @@
 <?xml version="1.0"?>
+<!-- UpgradeCode must never change once a real release ships with it --
+     MSI uses it as the stable product-family identifier for upgrade
+     detection across versions. -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Id="*" Name="Alresia VoltPanel" Language="1033" Version="0.1.0" Manufacturer="Alresia" UpgradeCode="PUT-GUID-HERE">
+  <Product Id="*" Name="Alresia VoltPanel" Language="1033" Version="0.1.0" Manufacturer="Alresia" UpgradeCode="C37997BA-354A-48D9-98A5-3922FD606F9E">
     <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine"/>
     <MediaTemplate/>
     <Directory Id="TARGETDIR" Name="SourceDir">
