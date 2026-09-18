@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/subtle"
 	"embed"
 	"io"
 	"io/fs"
@@ -41,7 +42,7 @@ func New(opt Options) (*Server, error) {
 	// Initialize subsystems
 	st := storage.NewStore(opt.CfgDir)
 	mgr := agent.NewManager(st)
-	hub := ws.NewHub()
+	hub := ws.NewHub(opt.Token, opt.Dev)
 	go hub.Run()
 
 	s := &Server{opt: opt, r: g, hub: hub, mgr: mgr, store: st}
@@ -49,11 +50,10 @@ func New(opt Options) (*Server, error) {
 	// Public endpoints
 	g.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
 
+	// Auth for /ws/events happens post-upgrade, inside ws.ServeWs: browsers
+	// cannot set custom headers on a WebSocket handshake, so the usual
+	// X-Volt-Token header check below can't apply here.
 	g.GET("/ws/events", func(c *gin.Context) {
-		if !s.authorized(c.Request) && !opt.Dev {
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
 		ws.ServeWs(hub, c.Writer, c.Request)
 	})
 
@@ -161,8 +161,16 @@ func New(opt Options) (*Server, error) {
 				// serve index.html for SPA routes
 				file, err := sub.Open("index.html")
 				if err == nil {
+					defer file.Close()
 					stat, _ := file.Stat()
-					http.ServeContent(c.Writer, c.Request, "index.html", stat.ModTime(), file)
+					// fs.Sub's wrapper type doesn't always preserve io.Seeker
+					// (which ServeContent requires), so fall back to a plain copy.
+					if rs, ok := file.(io.ReadSeeker); ok {
+						http.ServeContent(c.Writer, c.Request, "index.html", stat.ModTime(), rs)
+					} else {
+						c.Writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+						_, _ = io.Copy(c.Writer, file)
+					}
 					return
 				}
 			}
@@ -181,7 +189,7 @@ func (s *Server) authorized(r *http.Request) bool {
 	if t == "" {
 		t = r.Header.Get("x-volt-token")
 	}
-	return t != "" && t == s.opt.Token
+	return t != "" && subtle.ConstantTimeCompare([]byte(t), []byte(s.opt.Token)) == 1
 }
 
 func (s *Server) Run() error {

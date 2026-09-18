@@ -36,7 +36,7 @@ export default function App() {
         {tab==='dash' && <Dashboard headers={headers} />}
         {tab==='proc' && <Processes headers={headers} />}
         {tab==='files' && <Files headers={headers} />}
-        {tab==='logs' && <Logs headers={headers} />}
+        {tab==='logs' && <Logs headers={headers} token={token} />}
         {tab==='settings' && <Settings headers={headers} />}
       </main>
     </div>
