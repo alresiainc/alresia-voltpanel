@@ -1,0 +1,5 @@
+#!/usr/bin/env php
+<?php
+// Marker file only, for VoltPanel's detection-engine tests -- the
+// detector keys off this file's presence, no real Laravel install
+// needed. See internal/domain/project/detect/laravel.go.

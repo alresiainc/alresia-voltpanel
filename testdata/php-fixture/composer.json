@@ -1,0 +1,7 @@
+{
+    "name": "fixture/php-app",
+    "description": "Minimal fixture for VoltPanel's detection-engine tests -- generic PHP, no framework markers.",
+    "require": {
+        "php": "^8.1"
+    }
+}

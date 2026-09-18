@@ -39,22 +39,33 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	var firstCount int
+	if err := db.QueryRow(`SELECT COUNT(1) FROM schema_migrations`).Scan(&firstCount); err != nil {
+		t.Fatal(err)
+	}
+	if firstCount == 0 {
+		t.Fatal("expected at least one applied migration after the first open")
+	}
 	db.Close()
 
 	// Re-opening (and thus re-running the migration runner) against the
-	// same on-disk file must not fail or duplicate schema objects.
+	// same on-disk file must not fail or duplicate schema objects -- the
+	// applied count must stay exactly what it was, not double. (Not
+	// hardcoded to a specific number: new migrations are added additively
+	// as later phases land, per 0001_init.sql's own comment.)
 	db2, err := OpenSQLite(cfgDir)
 	if err != nil {
 		t.Fatalf("second open failed: %v", err)
 	}
 	defer db2.Close()
 
-	var count int
-	if err := db2.QueryRow(`SELECT COUNT(1) FROM schema_migrations`).Scan(&count); err != nil {
+	var secondCount int
+	if err := db2.QueryRow(`SELECT COUNT(1) FROM schema_migrations`).Scan(&secondCount); err != nil {
 		t.Fatal(err)
 	}
-	if count != 1 {
-		t.Fatalf("expected exactly 1 applied migration, got %d", count)
+	if secondCount != firstCount {
+		t.Fatalf("expected re-opening to leave the applied migration count unchanged: first=%d second=%d", firstCount, secondCount)
 	}
 }
 
