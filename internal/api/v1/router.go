@@ -41,4 +41,10 @@ func Mount(g *gin.Engine, d Deps) {
 	authed.POST("/files/upload", uploadFile(d))
 
 	authed.GET("/system/metrics", systemMetrics)
+
+	authed.GET("/projects", listProjects(d))
+	authed.POST("/projects", createProject(d))
+	authed.GET("/projects/:id", getProject(d))
+	authed.DELETE("/projects/:id", deleteProject(d))
+	authed.POST("/projects/:id/detect", redetectProject(d))
 }

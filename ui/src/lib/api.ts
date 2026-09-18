@@ -62,6 +62,18 @@ export interface Metrics {
   openLocalPorts: number[]
 }
 
+export interface Project {
+  id: string
+  name: string
+  path: string
+  runtimeId?: string
+  runtimeVersion?: string
+  detectedKind: string
+  runCommand: string
+  createdAt: string
+  updatedAt: string
+}
+
 export const api = {
   verifyToken: (token: string) =>
     request<{ ok: boolean }>('/auth/token/verify', {
@@ -86,4 +98,11 @@ export const api = {
   copyFile: (src: string, dst: string) => request('/files/copy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ src, dst }) }),
 
   systemMetrics: () => request<Metrics>('/system/metrics'),
+
+  listProjects: () => request<Project[]>('/projects'),
+  createProject: (name: string, path: string) =>
+    request<Project>('/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, path }) }),
+  getProject: (id: string) => request<Project>(`/projects/${encodeURIComponent(id)}`),
+  deleteProject: (id: string) => request(`/projects/${encodeURIComponent(id)}?confirm=true`, { method: 'DELETE' }),
+  detectProject: (id: string) => request<Project>(`/projects/${encodeURIComponent(id)}/detect`, { method: 'POST' }),
 }

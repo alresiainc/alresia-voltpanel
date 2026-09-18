@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import Dashboard from './pages/Dashboard'
 import Processes from './pages/Processes'
+import Projects from './pages/Projects'
 import Files from './pages/Files'
 import Logs from './pages/Logs'
 import Settings from './pages/Settings'
@@ -25,7 +26,7 @@ function useToken() {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<'dash'|'proc'|'files'|'logs'|'settings'>('dash')
+  const [tab, setTab] = useState<'dash'|'proc'|'projects'|'files'|'logs'|'settings'>('dash')
   const { token, setToken } = useToken()
 
   return (
@@ -33,6 +34,7 @@ export default function App() {
       <nav className="flex gap-3 p-3 border-b">
         <button onClick={() => setTab('dash')}>Dashboard</button>
         <button onClick={() => setTab('proc')}>Processes</button>
+        <button onClick={() => setTab('projects')}>Projects</button>
         <button onClick={() => setTab('files')}>Files</button>
         <button onClick={() => setTab('logs')}>Logs</button>
         <button onClick={() => setTab('settings')}>Settings</button>
@@ -43,6 +45,7 @@ export default function App() {
       <main className="p-4">
         {tab==='dash' && <Dashboard />}
         {tab==='proc' && <Processes />}
+        {tab==='projects' && <Projects />}
         {tab==='files' && <Files />}
         {tab==='logs' && <Logs />}
         {tab==='settings' && <Settings />}
