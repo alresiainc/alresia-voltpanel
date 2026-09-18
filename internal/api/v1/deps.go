@@ -9,6 +9,7 @@ import (
 
 	"github.com/alresiainc/alresia-voltpanel/internal/agent"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
+	"github.com/alresiainc/alresia-voltpanel/internal/providers/docker"
 	"github.com/alresiainc/alresia-voltpanel/internal/security"
 	"github.com/alresiainc/alresia-voltpanel/internal/storage"
 	"github.com/alresiainc/alresia-voltpanel/internal/ws"
@@ -17,17 +18,23 @@ import (
 // Deps bundles everything handlers need. Constructed once in internal/server
 // and passed down instead of handlers reaching for package-level globals.
 type Deps struct {
-	Store     *storage.Store
-	Mgr       *agent.Manager
-	Hub       *ws.Hub
-	Session   *security.SessionAuth
-	Token     string
-	Dev       bool
+	Store   *storage.Store
+	Mgr     *agent.Manager
+	Hub     *ws.Hub
+	Session *security.SessionAuth
+	Token   string
+	Dev     bool
 	// Providers holds registered RuntimeProviders (and, in later phases,
 	// other provider kinds) by Kind() -- see internal/providers (§7).
 	// Handlers always go through it rather than a concrete provider
 	// package.
 	Providers *providers.Registry
+	// Docker is nil only on platforms NewClient outright refuses (Windows,
+	// today); otherwise it's always set, even when no daemon is actually
+	// reachable -- docker.go handlers probe with Available() per request
+	// and report a clean "Docker not available" error rather than assuming
+	// a non-nil client means a live daemon.
+	Docker *docker.Client
 }
 
 func (d Deps) DB() *sql.DB { return d.Store.DB() }
