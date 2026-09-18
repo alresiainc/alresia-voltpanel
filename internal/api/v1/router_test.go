@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alresiainc/alresia-voltpanel/internal/agent"
+	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
 	"github.com/alresiainc/alresia-voltpanel/internal/security"
 	"github.com/alresiainc/alresia-voltpanel/internal/storage"
 	"github.com/alresiainc/alresia-voltpanel/internal/ws"
@@ -31,7 +31,7 @@ func newTestRouter(t *testing.T, token string) (*gin.Engine, Deps) {
 		t.Fatal(err)
 	}
 	hub := ws.NewHub(token, false, session)
-	d := Deps{Store: st, Mgr: agent.NewManager(st), Hub: hub, Session: session, Token: token, Dev: false}
+	d := Deps{Store: st, Mgr: service.NewManager(st, hub), Hub: hub, Session: session, Token: token, Dev: false}
 	g := gin.New()
 	Mount(g, d)
 	return g, d

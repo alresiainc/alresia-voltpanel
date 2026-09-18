@@ -1,8 +1,8 @@
-//go:build windows
+//go:build linux
 
 package system
 
-import "github.com/alresiainc/alresia-voltpanel/internal/platform/windows"
+import "github.com/alresiainc/alresia-voltpanel/internal/platform/linux"
 
 // ServiceOptions describes the Volt daemon service to register. Callers
 // are expected to pass an explicit ExecPath (e.g. from os.Executable());
@@ -14,13 +14,13 @@ type ServiceOptions struct {
 }
 
 func Install(opts ServiceOptions) error {
-	return windows.Install(windows.Options{Name: opts.Name, ExecPath: opts.ExecPath, Args: opts.Args})
+	return linux.Install(linux.Options{Name: opts.Name, ExecPath: opts.ExecPath, Args: opts.Args})
 }
 
 func Uninstall(name string) error {
-	return windows.Uninstall(name)
+	return linux.Uninstall(name)
 }
 
 func Status(name string) (string, error) {
-	return windows.Status(name)
+	return linux.Status(name)
 }

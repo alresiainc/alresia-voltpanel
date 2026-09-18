@@ -49,12 +49,17 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 	}
 	defer db2.Close()
 
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	var count int
 	if err := db2.QueryRow(`SELECT COUNT(1) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 1 {
-		t.Fatalf("expected exactly 1 applied migration, got %d", count)
+	if count != len(entries) {
+		t.Fatalf("expected exactly %d applied migrations (one per migration file), got %d", len(entries), count)
 	}
 }
 
