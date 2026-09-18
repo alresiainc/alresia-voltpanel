@@ -25,6 +25,10 @@ func Mount(g *gin.Engine, d Deps) {
 	authed := api.Group("/")
 	authed.Use(authMiddleware(d))
 
+	authed.GET("/runtimes", listRuntimes(d))
+	authed.POST("/runtimes/:kind/detect", detectRuntimeKind(d))
+	authed.POST("/runtimes/:kind/versions/:version/default", setDefaultRuntimeVersion(d))
+
 	authed.GET("/services", listServices(d))
 	authed.POST("/services/:id/start", startService(d))
 	authed.POST("/services/:id/stop", stopService(d))
