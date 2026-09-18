@@ -146,6 +146,23 @@ export interface DockerExecResult {
   exitCode: number
 }
 
+export interface Domain {
+  id: string
+  hostname: string
+  projectId?: string
+  port?: number
+  provider: string
+  sslEnabled: boolean
+  enabled: boolean
+  createdAt: string
+}
+
+export interface CAInfo {
+  commonName: string
+  notAfter: string
+  trusted: boolean
+}
+
 export const api = {
   verifyToken: (token: string) =>
     request<{ ok: boolean }>('/auth/token/verify', {
@@ -199,4 +216,15 @@ export const api = {
   listDockerImages: () => request<DockerImage[]>('/docker/images'),
   listDockerVolumes: () => request<DockerVolume[]>('/docker/volumes'),
   listDockerNetworks: () => request<DockerNetwork[]>('/docker/networks'),
+
+  listDomains: () => request<Domain[]>('/domains'),
+  createDomain: (hostname: string, port?: number) =>
+    request<Domain>('/domains', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hostname, port }) }),
+  deleteDomain: (id: string) => request(`/domains/${encodeURIComponent(id)}?confirm=true`, { method: 'DELETE' }),
+  domainConflicts: (id: string) => request<string[]>(`/domains/${encodeURIComponent(id)}/conflicts`),
+  ensureCA: () => request<CAInfo>('/ssl/ca/ensure', { method: 'POST' }),
+  issueCertificate: (domainId: string) =>
+    request('/ssl/certificates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ domainId }) }),
+  trustCA: (confirmed: boolean) =>
+    request('/ssl/ca/trust', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmed }) }),
 }
