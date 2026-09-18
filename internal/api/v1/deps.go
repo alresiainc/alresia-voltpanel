@@ -43,6 +43,11 @@ type Deps struct {
 	// internal/api/v1/domains_test.go / ssl_test.go.
 	Domains providers.DomainProvider
 	SSL     providers.SSLProvider
+	// Remote is the RemoteProvider (§7 Phase 7) servers.go connects through
+	// for TestConnection/exec/metrics/file-browsing. Never nil in
+	// production (internal/providers/remote/ssh.Provider); tests may swap
+	// in a fake.
+	Remote providers.RemoteProvider
 	// Extensions loads/enables/disables external providers (§17 Phase 11)
 	// and registers/unregisters them into Providers above -- from any
 	// handler's point of view, an enabled extension's subprocess is

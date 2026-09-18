@@ -1,12 +1,13 @@
-// Secret storage (§9.7 of the implementation plan): integration tokens
-// (GitHub PATs today, SSH keys/other credentials later) are never stored
-// as plaintext DB rows. The full plan design prefers the OS keychain first
-// and falls back to an AES-GCM-encrypted local blob only when no keychain
-// is available (headless Linux); no keychain integration exists yet in
-// this codebase, so SecretStore below implements just the fallback path,
-// scoped to this need. It follows the same shape (opaque secretID in,
-// plaintext out, by id) so a future OS-keychain-first implementation can
-// slot in underneath without changing any caller.
+// Package security also implements the two-tier Secret abstraction from §9.7
+// of the implementation plan: SSH keys and integration tokens are never
+// stored as plaintext DB rows. SecretStore prefers the OS keychain (macOS
+// Keychain via the `security` CLI today -- see keychain_darwin.go/
+// keychain_other.go) and falls back to an AES-GCM-encrypted blob keyed by a
+// machine-local key file (0600) only when no OS keychain is available (e.g.
+// headless Linux, or Windows/Linux until a keychain backend is added there).
+// The `secrets` SQLite table (internal/storage/migrations/0001_init.sql)
+// only ever holds metadata plus the storage_backend discriminator -- never
+// the plaintext.
 package security
 
 import (
@@ -14,9 +15,9 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -24,120 +25,183 @@ import (
 	"github.com/google/uuid"
 )
 
-// ErrSecretNotFound is returned by SecretStore.Get/Delete when no secret
-// with the given id exists.
+// ErrSecretNotFound is returned by SecretStore.Resolve/Delete when no secret
+// row matches the given ref.
 var ErrSecretNotFound = errors.New("secret not found")
 
-// secretKeyFileName is the machine-local AES-256 key file's name, created
-// 0600 under the daemon's config directory on first use. Losing this file
-// makes every previously stored secret unrecoverable by design -- it is
-// never written anywhere else (never logged, never in the DB).
-const secretKeyFileName = "secret.key"
+const (
+	backendOSKeychain    = "os_keychain"
+	backendEncryptedBlob = "encrypted_sqlite_blob"
+)
 
-// SecretStore persists encrypted secret blobs in the `secrets` table
-// (internal/storage/migrations/0001_init.sql: owner_type, owner_id, kind,
-// storage_backend, encrypted_blob), keyed by a machine-local key file.
-// Zero value is not usable; construct with NewSecretStore.
+// keychainSet/keychainGet/keychainDelete are package-level function
+// variables (rather than plain calls to the platform-specific
+// implementation) so tests can force the encrypted-blob fallback path
+// deterministically, on any OS, without needing a real keychain to be
+// unavailable.
+var (
+	keychainSet    = osKeychainSet
+	keychainGet    = osKeychainGet
+	keychainDelete = osKeychainDelete
+)
+
+// SecretStore is the SQLite-metadata-plus-real-backend implementation of the
+// Secret entity (§6/§9.7). Callers store credential material (e.g. an SSH
+// private key's PEM bytes) and get back an opaque secret_ref to persist on
+// the owning row (e.g. servers.secret_ref) -- the plaintext itself never
+// touches that row or any log/audit line.
 type SecretStore struct {
-	db  *sql.DB
-	key []byte
+	db      *sql.DB
+	keyPath string
 }
 
-// NewSecretStore loads (or creates) the machine-local key file under
-// cfgDir and returns a SecretStore backed by db's `secrets` table.
+// NewSecretStore builds a SecretStore over an already-migrated *sql.DB
+// (internal/storage.Store.DB()) and cfgDir (the Volt config directory,
+// ~/.volt by default) for the encrypted-blob fallback's machine-local key
+// file.
 func NewSecretStore(db *sql.DB, cfgDir string) (*SecretStore, error) {
-	key, err := loadOrCreateSecretKey(filepath.Join(cfgDir, secretKeyFileName))
-	if err != nil {
-		return nil, fmt.Errorf("secret store key: %w", err)
-	}
-	return &SecretStore{db: db, key: key}, nil
+	return &SecretStore{db: db, keyPath: filepath.Join(cfgDir, "secret.key")}, nil
 }
 
-func loadOrCreateSecretKey(path string) ([]byte, error) {
-	if b, err := os.ReadFile(path); err == nil && len(b) == 32 {
-		return b, nil
-	}
-	key := make([]byte, 32) // AES-256
-	if _, err := io.ReadFull(rand.Reader, key); err != nil {
-		return nil, err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(path, key, 0o600); err != nil {
-		return nil, err
-	}
-	return key, nil
-}
-
-// Put encrypts plaintext and inserts a new `secrets` row, returning its id.
-// Callers store only this id (as `secret_ref`) -- the plaintext never
-// touches any other table.
-func (s *SecretStore) Put(ownerType, ownerID, kind string, plaintext []byte) (string, error) {
-	blob, err := s.encrypt(plaintext)
-	if err != nil {
-		return "", fmt.Errorf("encrypt secret: %w", err)
-	}
+// Store persists value (plaintext credential material) for the given owner
+// (e.g. ownerType="server", ownerID=<server id>) and kind (e.g.
+// "ssh_key"), choosing the OS keychain first and falling back to the
+// encrypted blob only when the keychain write fails. It returns the new
+// secret's id -- the secret_ref other tables should hold -- never the
+// plaintext.
+func (s *SecretStore) Put(ownerType, ownerID, kind string, value []byte) (string, error) {
 	id := uuid.NewString()
-	_, err = s.db.Exec(
-		`INSERT INTO secrets (id, owner_type, owner_id, kind, storage_backend, encrypted_blob, created_at) VALUES (?, ?, ?, ?, 'local-aesgcm', ?, ?)`,
-		id, ownerType, ownerID, kind, blob, time.Now().UTC().Format(time.RFC3339),
+	account := keychainAccount(ownerType, ownerID, kind, id)
+
+	backend := backendOSKeychain
+	var blob []byte
+	if err := keychainSet(account, value); err != nil {
+		backend = backendEncryptedBlob
+		enc, encErr := s.encrypt(value)
+		if encErr != nil {
+			return "", fmt.Errorf("store secret: os keychain unavailable (%v) and encrypted fallback failed: %w", err, encErr)
+		}
+		blob = enc
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := s.db.Exec(
+		`INSERT INTO secrets (id, owner_type, owner_id, kind, storage_backend, encrypted_blob, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, ownerType, ownerID, kind, backend, blob, now,
 	)
 	if err != nil {
+		if backend == backendOSKeychain {
+			_ = keychainDelete(account) // best-effort cleanup, don't mask the real error
+		}
 		return "", err
 	}
 	return id, nil
 }
 
-// Get decrypts and returns the plaintext for secret id.
-func (s *SecretStore) Get(id string) ([]byte, error) {
-	var blob []byte
-	err := s.db.QueryRow(`SELECT encrypted_blob FROM secrets WHERE id = ?`, id).Scan(&blob)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrSecretNotFound
-	}
+// Resolve returns the plaintext value for a secret previously stored via
+// Store.
+func (s *SecretStore) Get(secretRef string) ([]byte, error) {
+	ownerType, ownerID, kind, backend, blob, err := s.lookup(secretRef)
 	if err != nil {
 		return nil, err
 	}
-	return s.decrypt(blob)
+	switch backend {
+	case backendOSKeychain:
+		return keychainGet(keychainAccount(ownerType, ownerID, kind, secretRef))
+	case backendEncryptedBlob:
+		return s.decrypt(blob)
+	default:
+		return nil, fmt.Errorf("secret %s: unknown storage_backend %q", secretRef, backend)
+	}
 }
 
-// Delete removes a secret row. It is not an error to delete an id that
-// doesn't exist (idempotent, matching integration/server delete flows that
-// call this best-effort alongside their own row delete).
-func (s *SecretStore) Delete(id string) error {
-	_, err := s.db.Exec(`DELETE FROM secrets WHERE id = ?`, id)
+// Delete removes a secret from both its real backend and the metadata row.
+// Deleting an already-absent ref is a no-op, not an error, matching the
+// idempotent-delete convention used elsewhere in this codebase.
+func (s *SecretStore) Delete(secretRef string) error {
+	ownerType, ownerID, kind, backend, _, err := s.lookup(secretRef)
+	if errors.Is(err, ErrSecretNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if backend == backendOSKeychain {
+		_ = keychainDelete(keychainAccount(ownerType, ownerID, kind, secretRef))
+	}
+	_, err = s.db.Exec(`DELETE FROM secrets WHERE id = ?`, secretRef)
 	return err
 }
 
-func (s *SecretStore) encrypt(plaintext []byte) ([]byte, error) {
-	block, err := aes.NewCipher(s.key)
-	if err != nil {
+func (s *SecretStore) lookup(secretRef string) (ownerType, ownerID, kind, backend string, blob []byte, err error) {
+	row := s.db.QueryRow(`SELECT owner_type, owner_id, kind, storage_backend, encrypted_blob FROM secrets WHERE id = ?`, secretRef)
+	if scanErr := row.Scan(&ownerType, &ownerID, &kind, &backend, &blob); scanErr != nil {
+		if errors.Is(scanErr, sql.ErrNoRows) {
+			return "", "", "", "", nil, ErrSecretNotFound
+		}
+		return "", "", "", "", nil, scanErr
+	}
+	return ownerType, ownerID, kind, backend, blob, nil
+}
+
+func keychainAccount(ownerType, ownerID, kind, id string) string {
+	return fmt.Sprintf("volt:%s:%s:%s:%s", ownerType, ownerID, kind, id)
+}
+
+// loadOrCreateKey returns the machine-local AES-256 key used by the
+// encrypted-blob fallback, generating and persisting one (0600) on first
+// use.
+func (s *SecretStore) loadOrCreateKey() ([]byte, error) {
+	if b, err := os.ReadFile(s.keyPath); err == nil {
+		if key, decErr := base64.StdEncoding.DecodeString(string(b)); decErr == nil && len(key) == 32 {
+			return key, nil
+		}
+	}
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
 		return nil, err
 	}
-	gcm, err := cipher.NewGCM(block)
+	if err := os.MkdirAll(filepath.Dir(s.keyPath), 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(s.keyPath, []byte(base64.StdEncoding.EncodeToString(key)), 0o600); err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+func (s *SecretStore) encrypt(plaintext []byte) ([]byte, error) {
+	gcm, err := s.gcm()
 	if err != nil {
 		return nil, err
 	}
 	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+	if _, err := rand.Read(nonce); err != nil {
 		return nil, err
 	}
 	return gcm.Seal(nonce, nonce, plaintext, nil), nil
 }
 
-func (s *SecretStore) decrypt(blob []byte) ([]byte, error) {
-	block, err := aes.NewCipher(s.key)
+func (s *SecretStore) decrypt(ciphertext []byte) ([]byte, error) {
+	gcm, err := s.gcm()
 	if err != nil {
 		return nil, err
 	}
-	gcm, err := cipher.NewGCM(block)
+	if len(ciphertext) < gcm.NonceSize() {
+		return nil, fmt.Errorf("encrypted secret blob is corrupt (too short)")
+	}
+	nonce, ct := ciphertext[:gcm.NonceSize()], ciphertext[gcm.NonceSize():]
+	return gcm.Open(nil, nonce, ct, nil)
+}
+
+func (s *SecretStore) gcm() (cipher.AEAD, error) {
+	key, err := s.loadOrCreateKey()
 	if err != nil {
 		return nil, err
 	}
-	if len(blob) < gcm.NonceSize() {
-		return nil, errors.New("secret blob too short")
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
 	}
-	nonce, ciphertext := blob[:gcm.NonceSize()], blob[gcm.NonceSize():]
-	return gcm.Open(nil, nonce, ciphertext, nil)
+	return cipher.NewGCM(block)
 }

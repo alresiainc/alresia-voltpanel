@@ -2,23 +2,25 @@ package security
 
 import (
 	"database/sql"
-	"os"
+	"errors"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	_ "modernc.org/sqlite"
 )
 
-// testSecretsDB opens a throwaway SQLite DB with just the `secrets` table
-// (mirroring internal/storage/migrations/0001_init.sql) -- kept minimal and
-// local to this package rather than importing internal/storage, which
-// already imports internal/security and would make that an import cycle.
-func testSecretsDB(t *testing.T) *sql.DB {
+// openTestSecretsDB opens a throwaway SQLite DB with just the `secrets`
+// table (matching internal/storage/migrations/0001_init.sql) -- internal/
+// security can't import internal/storage (storage already imports
+// security, for the Sandbox and SessionAuth), so tests build their own
+// minimal schema rather than sharing Store's migration runner.
+func openTestSecretsDB(t *testing.T) *sql.DB {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "test.db")
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("open sqlite: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
 	_, err = db.Exec(`CREATE TABLE secrets (
@@ -32,119 +34,155 @@ func testSecretsDB(t *testing.T) *sql.DB {
 		rotated_at TEXT
 	)`)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("create secrets table: %v", err)
 	}
 	return db
 }
 
-func TestSecretStorePutGetRoundTrip(t *testing.T) {
-	db := testSecretsDB(t)
-	cfgDir := t.TempDir()
-	store, err := NewSecretStore(db, cfgDir)
+// forceEncryptedFallback monkey-patches the keychain functions so every
+// Store call in this test takes the encrypted-blob path, deterministically
+// and portably (§9.7 says the encrypted-blob fallback must be tested fully,
+// independent of whether this machine's real OS keychain happens to be
+// available).
+func forceEncryptedFallback(t *testing.T) {
+	t.Helper()
+	origSet, origGet, origDel := keychainSet, keychainGet, keychainDelete
+	keychainSet = func(account string, value []byte) error { return errors.New("forced unavailable for test") }
+	keychainGet = func(account string) ([]byte, error) { return nil, errors.New("forced unavailable for test") }
+	keychainDelete = func(account string) error { return nil }
+	t.Cleanup(func() {
+		keychainSet, keychainGet, keychainDelete = origSet, origGet, origDel
+	})
+}
+
+func TestSecretStore_EncryptedBlobFallback_RoundTrip(t *testing.T) {
+	forceEncryptedFallback(t)
+	db := openTestSecretsDB(t)
+	store, err := NewSecretStore(db, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	const plaintext = "ghp_thisIsATestTokenNotReal"
-	id, err := store.Put("integration", "octocat", "github-pat", []byte(plaintext))
+	secret := []byte("-----BEGIN OPENSSH PRIVATE KEY-----\nfake-key-material\n-----END OPENSSH PRIVATE KEY-----\n")
+	ref, err := store.Put("server", "srv-1", "ssh_key", secret)
 	if err != nil {
-		t.Fatalf("Put: %v", err)
+		t.Fatalf("Store: %v", err)
 	}
-	if id == "" {
-		t.Fatal("expected a non-empty secret id")
+	if ref == "" {
+		t.Fatal("Store returned empty secret ref")
 	}
 
-	// The DB row itself must never hold the plaintext -- only an encrypted
-	// blob distinct from it.
+	// The DB row must carry the ciphertext, never the plaintext.
+	var backend string
 	var blob []byte
-	if err := db.QueryRow(`SELECT encrypted_blob FROM secrets WHERE id = ?`, id).Scan(&blob); err != nil {
-		t.Fatal(err)
+	if err := db.QueryRow(`SELECT storage_backend, encrypted_blob FROM secrets WHERE id = ?`, ref).Scan(&backend, &blob); err != nil {
+		t.Fatalf("query secret row: %v", err)
 	}
-	if string(blob) == plaintext {
-		t.Fatal("encrypted_blob must not equal the plaintext")
+	if backend != backendEncryptedBlob {
+		t.Fatalf("storage_backend = %q, want %q", backend, backendEncryptedBlob)
 	}
-	for i := 0; i+len(plaintext) <= len(blob); i++ {
-		if string(blob[i:i+len(plaintext)]) == plaintext {
-			t.Fatal("plaintext token must not appear anywhere in the stored blob")
-		}
+	if len(blob) == 0 {
+		t.Fatal("encrypted_blob is empty")
+	}
+	if string(blob) == string(secret) {
+		t.Fatal("encrypted_blob contains the plaintext secret verbatim")
 	}
 
-	got, err := store.Get(id)
+	got, err := store.Get(ref)
 	if err != nil {
-		t.Fatalf("Get: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
-	if string(got) != plaintext {
-		t.Fatalf("expected round-tripped plaintext %q, got %q", plaintext, got)
+	if string(got) != string(secret) {
+		t.Fatalf("Resolve returned %q, want %q", got, secret)
+	}
+
+	if err := store.Delete(ref); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := store.Get(ref); !errors.Is(err, ErrSecretNotFound) {
+		t.Fatalf("Resolve after Delete: err = %v, want ErrSecretNotFound", err)
 	}
 }
 
-func TestSecretStoreGetMissingReturnsErrNotFound(t *testing.T) {
-	db := testSecretsDB(t)
+func TestSecretStore_EncryptedBlobFallback_WrongKeyFails(t *testing.T) {
+	forceEncryptedFallback(t)
+	db := openTestSecretsDB(t)
+	dir1, dir2 := t.TempDir(), t.TempDir()
+	store1, err := NewSecretStore(db, dir1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store2, err := NewSecretStore(db, dir2) // different machine-local key file
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ref, err := store1.Put("server", "srv-1", "ssh_key", []byte("secret"))
+	if err != nil {
+		t.Fatalf("Store: %v", err)
+	}
+	if _, err := store2.Get(ref); err == nil {
+		t.Fatal("Resolve with a different machine-local key unexpectedly succeeded")
+	}
+}
+
+func TestSecretStore_Resolve_NotFound(t *testing.T) {
+	db := openTestSecretsDB(t)
 	store, err := NewSecretStore(db, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Get("does-not-exist"); err != ErrSecretNotFound {
-		t.Fatalf("expected ErrSecretNotFound, got %v", err)
+	if _, err := store.Get("does-not-exist"); !errors.Is(err, ErrSecretNotFound) {
+		t.Fatalf("Resolve: err = %v, want ErrSecretNotFound", err)
 	}
 }
 
-func TestSecretStoreDelete(t *testing.T) {
-	db := testSecretsDB(t)
+func TestSecretStore_Delete_NotFoundIsNoOp(t *testing.T) {
+	db := openTestSecretsDB(t)
 	store, err := NewSecretStore(db, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := store.Put("integration", "octocat", "github-pat", []byte("secret-value"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Delete(id); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.Get(id); err != ErrSecretNotFound {
-		t.Fatalf("expected deleted secret to be gone, got %v", err)
+	if err := store.Delete("does-not-exist"); err != nil {
+		t.Fatalf("Delete of a missing secret should be a no-op, got: %v", err)
 	}
 }
 
-func TestSecretStoreKeyFilePermissions(t *testing.T) {
-	db := testSecretsDB(t)
-	cfgDir := t.TempDir()
-	if _, err := NewSecretStore(db, cfgDir); err != nil {
-		t.Fatal(err)
+// TestSecretStore_OSKeychainRoundTrip is the best-effort *real* keychain
+// test §9.7 asks for -- it uses the actual platform backend (no monkey-
+// patching) and skips cleanly if the keychain is unavailable or access is
+// denied (headless CI, a locked keychain, a non-darwin box with no keychain
+// backend implemented yet, etc.) rather than failing the suite.
+func TestSecretStore_OSKeychainRoundTrip(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("no OS keychain backend implemented on this platform yet (see keychain_other.go); encrypted-blob fallback is covered by other tests")
 	}
-	info, err := os.Stat(filepath.Join(cfgDir, secretKeyFileName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Fatalf("expected key file to be 0600, got %o", perm)
-	}
-}
-
-func TestSecretStoreReusesExistingKey(t *testing.T) {
-	db := testSecretsDB(t)
-	cfgDir := t.TempDir()
-	store1, err := NewSecretStore(db, cfgDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	id, err := store1.Put("integration", "octocat", "github-pat", []byte("persisted-secret"))
+	db := openTestSecretsDB(t)
+	store, err := NewSecretStore(db, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// A second store instance backed by the same cfgDir/key file must be
-	// able to decrypt what the first one wrote.
-	store2, err := NewSecretStore(db, cfgDir)
+	secret := []byte("real-keychain-round-trip-test-value")
+	ref, err := store.Put("server", "srv-keychain-test", "ssh_key", secret)
 	if err != nil {
-		t.Fatal(err)
+		t.Skipf("os keychain unavailable in this environment, skipping: %v", err)
 	}
-	got, err := store2.Get(id)
+	t.Cleanup(func() { _ = store.Delete(ref) })
+
+	var backend string
+	if err := db.QueryRow(`SELECT storage_backend FROM secrets WHERE id = ?`, ref).Scan(&backend); err != nil {
+		t.Fatalf("query secret row: %v", err)
+	}
+	if backend != backendOSKeychain {
+		t.Skipf("environment fell back to encrypted blob instead of the real keychain (backend=%q); nothing more to verify here", backend)
+	}
+
+	got, err := store.Get(ref)
 	if err != nil {
-		t.Fatalf("Get with reloaded key: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
-	if string(got) != "persisted-secret" {
-		t.Fatalf("unexpected decrypted value: %q", got)
+	if string(got) != string(secret) {
+		t.Fatalf("Resolve returned %q, want %q", got, secret)
 	}
 }

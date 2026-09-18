@@ -192,6 +192,35 @@ export interface GitBranch {
   sha: string
 }
 
+export interface Server {
+  id: string
+  name: string
+  hostname: string
+  port: number
+  username: string
+  authMethod: string
+  lastConnectedAt?: string
+  osInfo?: string
+  createdAt: string
+}
+
+export interface RemoteMetrics {
+  uptime: string
+  loadAverage: string
+  memTotalKb: number
+  memFreeKb: number
+  raw?: Record<string, string>
+}
+
+export interface RemoteFileInfo {
+  name: string
+  path: string
+  isDir: boolean
+  size: number
+  mode: string
+  modTime: string
+}
+
 export const api = {
   verifyToken: (token: string) =>
     request<{ ok: boolean }>('/auth/token/verify', {
@@ -273,4 +302,19 @@ export const api = {
     request<GitBranch[]>(`/git/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches?integrationId=${encodeURIComponent(integrationId)}`),
   cloneGitRepo: (integrationId: string, repo: GitRepo, dest: string) =>
     request('/git/clone', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ integrationId, repo, dest }) }),
+
+  listServers: () => request<Server[]>('/servers'),
+  createServer: (body: { name: string; hostname: string; port?: number; username: string; authMethod: 'agent' | 'key'; key?: string }) =>
+    request<Server>('/servers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  deleteServer: (id: string) => request(`/servers/${encodeURIComponent(id)}?confirm=true`, { method: 'DELETE' }),
+  testServerConnection: (id: string) => request(`/servers/${encodeURIComponent(id)}/test`, { method: 'POST' }),
+  serverMetrics: (id: string) => request<RemoteMetrics>(`/servers/${encodeURIComponent(id)}/metrics`),
+  execServer: (id: string, command: string) =>
+    request<{ stdout: string; stderr: string; error: string; exitCode: number }>(`/servers/${encodeURIComponent(id)}/exec`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command }),
+    }),
+  listServerFiles: (id: string, path = '.') => request<RemoteFileInfo[]>(`/servers/${encodeURIComponent(id)}/files?path=${encodeURIComponent(path)}`),
+  readServerFile: (id: string, path: string) => request<string>(`/servers/${encodeURIComponent(id)}/files/read?path=${encodeURIComponent(path)}`),
+  writeServerFile: (id: string, path: string, content: string) =>
+    request(`/servers/${encodeURIComponent(id)}/files`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, content }) }),
 }

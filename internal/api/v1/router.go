@@ -85,4 +85,14 @@ func Mount(g *gin.Engine, d Deps) {
 	authed.GET("/git/repos", listGitRepos(d))
 	authed.POST("/git/clone", cloneGitRepo(d))
 	authed.GET("/git/repos/:owner/:repo/branches", gitBranches(d))
+
+	authed.GET("/servers", listServers(d))
+	authed.POST("/servers", createServer(d))
+	authed.DELETE("/servers/:id", deleteServer(d))
+	authed.POST("/servers/:id/test", testServerConnection(d))
+	authed.GET("/servers/:id/metrics", serverMetrics(d))
+	authed.POST("/servers/:id/exec", execServer(d))
+	authed.GET("/servers/:id/files", listServerFiles(d))
+	authed.GET("/servers/:id/files/read", readServerFile(d))
+	authed.PUT("/servers/:id/files", writeServerFile(d))
 }

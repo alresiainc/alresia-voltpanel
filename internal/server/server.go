@@ -17,6 +17,7 @@ import (
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/docker"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/domainprovider/hosts"
+	"github.com/alresiainc/alresia-voltpanel/internal/providers/remote/ssh"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/runtime/node"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/runtime/php"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/ssl/localca"
@@ -93,8 +94,9 @@ func New(opt Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	sshProvider := &ssh.Provider{ResolveKey: secrets.Get}
 
-	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Domains: domainProvider, SSL: sslProvider, Extensions: extensions, Secrets: secrets})
+	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Domains: domainProvider, SSL: sslProvider, Extensions: extensions, Secrets: secrets, Remote: sshProvider})
 
 	// Public, unversioned.
 	g.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
