@@ -173,6 +173,25 @@ export interface Extension {
   permissions: string[]
 }
 
+export interface Integration {
+  id: string
+  kind: string
+  accountRef: string
+  scopes: string[]
+  createdAt: string
+}
+
+export interface GitRepo {
+  id: string
+  name: string
+  cloneUrl: string
+}
+
+export interface GitBranch {
+  name: string
+  sha: string
+}
+
 export const api = {
   verifyToken: (token: string) =>
     request<{ ok: boolean }>('/auth/token/verify', {
@@ -244,4 +263,14 @@ export const api = {
   removeExtension: (id: string) => request(`/extensions/${encodeURIComponent(id)}?confirm=true`, { method: 'DELETE' }),
   enableExtension: (id: string) => request<Extension>(`/extensions/${encodeURIComponent(id)}/enable`, { method: 'POST' }),
   disableExtension: (id: string) => request<Extension>(`/extensions/${encodeURIComponent(id)}/disable`, { method: 'POST' }),
+
+  listIntegrations: () => request<Integration[]>('/integrations'),
+  createIntegration: (kind: string, token: string) =>
+    request<Integration>('/integrations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind, token }) }),
+  deleteIntegration: (id: string) => request(`/integrations/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  listGitRepos: (integrationId: string) => request<GitRepo[]>(`/git/repos?integrationId=${encodeURIComponent(integrationId)}`),
+  gitBranches: (integrationId: string, owner: string, repo: string) =>
+    request<GitBranch[]>(`/git/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches?integrationId=${encodeURIComponent(integrationId)}`),
+  cloneGitRepo: (integrationId: string, repo: GitRepo, dest: string) =>
+    request('/git/clone', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ integrationId, repo, dest }) }),
 }

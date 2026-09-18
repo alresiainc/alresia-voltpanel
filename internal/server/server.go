@@ -89,7 +89,12 @@ func New(opt Options) (*Server, error) {
 	// restart, exactly like a built-in provider always being there.
 	extensions.LoadEnabled(context.Background())
 
-	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Domains: domainProvider, SSL: sslProvider, Extensions: extensions})
+	secrets, err := security.NewSecretStore(st.DB(), opt.CfgDir)
+	if err != nil {
+		return nil, err
+	}
+
+	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Domains: domainProvider, SSL: sslProvider, Extensions: extensions, Secrets: secrets})
 
 	// Public, unversioned.
 	g.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })

@@ -31,10 +31,25 @@ func newTestRouter(t *testing.T, token string) (*gin.Engine, Deps) {
 		t.Fatal(err)
 	}
 	hub := ws.NewHub(token, false, session)
-	d := Deps{Store: st, Mgr: service.NewManager(st, hub), Hub: hub, Session: session, Token: token, Dev: false}
+	secrets, err := security.NewSecretStore(st.DB(), cfgDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := Deps{Store: st, Mgr: service.NewManager(st, hub), Hub: hub, Session: session, Token: token, Dev: false, Secrets: secrets}
 	g := gin.New()
 	Mount(g, d)
 	return g, d
+}
+
+// rebuildRouter re-mounts a fresh router over a (possibly mutated) Deps
+// value -- needed because Mount's handlers close over Deps by value, so a
+// test that adjusts a field after newTestRouter (e.g. git_test.go pointing
+// GitHubBaseURL at a fake server) must remount rather than mutate the
+// already-built *gin.Engine's captured copy.
+func rebuildRouter(d Deps) *gin.Engine {
+	g := gin.New()
+	Mount(g, d)
+	return g
 }
 
 func TestUnauthenticatedRequestRejected(t *testing.T) {

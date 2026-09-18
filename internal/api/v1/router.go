@@ -77,4 +77,12 @@ func Mount(g *gin.Engine, d Deps) {
 	authed.DELETE("/extensions/:id", removeExtension(d))
 	authed.POST("/extensions/:id/enable", enableExtension(d))
 	authed.POST("/extensions/:id/disable", disableExtension(d))
+
+	authed.GET("/integrations", listIntegrations(d))
+	authed.POST("/integrations", createIntegration(d))
+	authed.DELETE("/integrations/:id", deleteIntegration(d))
+
+	authed.GET("/git/repos", listGitRepos(d))
+	authed.POST("/git/clone", cloneGitRepo(d))
+	authed.GET("/git/repos/:owner/:repo/branches", gitBranches(d))
 }
