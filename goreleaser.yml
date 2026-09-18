@@ -40,8 +40,8 @@ nfpms:
         dst: /usr/bin/voltpanel
         file_info:
           mode: 0755
-      - src: ./packaging/devpanel.service
-        dst: /lib/systemd/system/devpanel.service
+      - src: ./packaging/voltpanel.service
+        dst: /lib/systemd/system/voltpanel.service
     scripts:
       postinstall: packaging/scripts/postinstall.sh
 

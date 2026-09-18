@@ -17,7 +17,8 @@ build: ui-build
 ui-build:
 	@echo "Building UI..."
 	@cd $(UI_DIR) && pnpm install && pnpm build
-	@mkdir -p $(CMD_DIR)/dist && cp -R $(UI_DIR)/dist/* $(CMD_DIR)/dist/
+	@rm -rf $(CMD_DIR)/dist && mkdir -p $(CMD_DIR)/dist
+	@cp -R $(UI_DIR)/dist/* $(CMD_DIR)/dist/
 
 ui-dev:
 	@cd $(UI_DIR) && pnpm install && pnpm dev

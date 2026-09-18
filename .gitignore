@@ -2,6 +2,10 @@
 /dist/
 /bin/
 /tmp/
+# Generated UI bundle embedded by cmd/voltpanel (content-hashed filenames churn
+# on every build); a placeholder cmd/voltpanel/dist/index.html stays tracked so
+# `go build` works before `make ui-build` has ever run.
+cmd/voltpanel/dist/assets/
 
 # Go
 *.exe
