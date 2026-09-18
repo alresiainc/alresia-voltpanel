@@ -62,6 +62,63 @@ export interface Metrics {
   openLocalPorts: number[]
 }
 
+export interface DockerPort {
+  ip?: string
+  privatePort: number
+  publicPort?: number
+  type: string
+}
+
+export interface DockerContainer {
+  id: string
+  names: string[]
+  image: string
+  command: string
+  state: string
+  status: string
+  labels: Record<string, string>
+  ports: DockerPort[]
+  project?: string
+}
+
+export interface DockerContainerDetail extends DockerContainer {
+  env: string[]
+  mounts: { type: string; source: string; destination: string; rw: boolean }[]
+  restartCount: number
+}
+
+export interface DockerImage {
+  id: string
+  tags: string[]
+  size: number
+  created: number
+}
+
+export interface DockerVolume {
+  name: string
+  driver: string
+  mountpoint: string
+  labels: Record<string, string>
+}
+
+export interface DockerNetwork {
+  id: string
+  name: string
+  driver: string
+  scope: string
+  labels: Record<string, string>
+}
+
+export interface ComposeProject {
+  name: string
+  containers: DockerContainer[]
+}
+
+export interface DockerExecResult {
+  output: string
+  exitCode: number
+}
+
 export const api = {
   verifyToken: (token: string) =>
     request<{ ok: boolean }>('/auth/token/verify', {
@@ -86,4 +143,21 @@ export const api = {
   copyFile: (src: string, dst: string) => request('/files/copy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ src, dst }) }),
 
   systemMetrics: () => request<Metrics>('/system/metrics'),
+
+  listDockerContainers: () => request<DockerContainer[]>('/docker/containers'),
+  listDockerContainersGrouped: () => request<ComposeProject[]>('/docker/containers?group=compose'),
+  getDockerContainer: (id: string) => request<DockerContainerDetail>(`/docker/containers/${encodeURIComponent(id)}`),
+  startDockerContainer: (id: string) => request(`/docker/containers/${encodeURIComponent(id)}/start`, { method: 'POST' }),
+  stopDockerContainer: (id: string) => request(`/docker/containers/${encodeURIComponent(id)}/stop`, { method: 'POST' }),
+  restartDockerContainer: (id: string) => request(`/docker/containers/${encodeURIComponent(id)}/restart`, { method: 'POST' }),
+  dockerContainerLogs: (id: string, tail = 200) => request<string>(`/docker/containers/${encodeURIComponent(id)}/logs?tail=${tail}`),
+  execDockerContainer: (id: string, cmd: string[]) =>
+    request<DockerExecResult>(`/docker/containers/${encodeURIComponent(id)}/exec`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cmd }),
+    }),
+  listDockerImages: () => request<DockerImage[]>('/docker/images'),
+  listDockerVolumes: () => request<DockerVolume[]>('/docker/volumes'),
+  listDockerNetworks: () => request<DockerNetwork[]>('/docker/networks'),
 }

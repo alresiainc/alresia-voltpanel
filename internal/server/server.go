@@ -4,6 +4,7 @@ import (
 	"embed"
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 
 	v1 "github.com/alresiainc/alresia-voltpanel/internal/api/v1"
 	"github.com/alresiainc/alresia-voltpanel/internal/agent"
+	"github.com/alresiainc/alresia-voltpanel/internal/providers/docker"
 	"github.com/alresiainc/alresia-voltpanel/internal/security"
 	"github.com/alresiainc/alresia-voltpanel/internal/storage"
 	"github.com/alresiainc/alresia-voltpanel/internal/ws"
@@ -54,7 +56,16 @@ func New(opt Options) (*Server, error) {
 	hub := ws.NewHub(opt.Token, opt.Dev, session)
 	go hub.Run()
 
-	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev})
+	// Construction never fails except on platforms with no supported
+	// transport (Windows, today) -- Docker not being installed/running
+	// here is expected and handled per-request by the docker.go handlers,
+	// not treated as a startup error.
+	dockerClient, err := docker.NewClient()
+	if err != nil {
+		log.Printf("volt: docker provider unavailable: %v", err)
+	}
+
+	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Docker: dockerClient})
 
 	// Public, unversioned.
 	g.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })

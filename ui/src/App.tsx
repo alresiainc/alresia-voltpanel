@@ -3,6 +3,7 @@ import Dashboard from './pages/Dashboard'
 import Processes from './pages/Processes'
 import Files from './pages/Files'
 import Logs from './pages/Logs'
+import Docker from './pages/Docker'
 import Settings from './pages/Settings'
 import { setToken as setApiToken, api } from './lib/api'
 import { wsClient } from './lib/ws'
@@ -25,7 +26,7 @@ function useToken() {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<'dash'|'proc'|'files'|'logs'|'settings'>('dash')
+  const [tab, setTab] = useState<'dash'|'proc'|'files'|'logs'|'docker'|'settings'>('dash')
   const { token, setToken } = useToken()
 
   return (
@@ -35,6 +36,7 @@ export default function App() {
         <button onClick={() => setTab('proc')}>Processes</button>
         <button onClick={() => setTab('files')}>Files</button>
         <button onClick={() => setTab('logs')}>Logs</button>
+        <button onClick={() => setTab('docker')}>Docker</button>
         <button onClick={() => setTab('settings')}>Settings</button>
         <div className="ml-auto flex items-center gap-2">
           <input placeholder="Token" value={token} onChange={e=>setToken(e.target.value)} className="border px-2 py-1 text-sm" />
@@ -45,6 +47,7 @@ export default function App() {
         {tab==='proc' && <Processes />}
         {tab==='files' && <Files />}
         {tab==='logs' && <Logs />}
+        {tab==='docker' && <Docker />}
         {tab==='settings' && <Settings />}
       </main>
     </div>

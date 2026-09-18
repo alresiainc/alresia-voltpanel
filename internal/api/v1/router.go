@@ -41,4 +41,15 @@ func Mount(g *gin.Engine, d Deps) {
 	authed.POST("/files/upload", uploadFile(d))
 
 	authed.GET("/system/metrics", systemMetrics)
+
+	authed.GET("/docker/containers", listDockerContainers(d))
+	authed.GET("/docker/containers/:id", getDockerContainer(d))
+	authed.POST("/docker/containers/:id/start", startDockerContainer(d))
+	authed.POST("/docker/containers/:id/stop", stopDockerContainer(d))
+	authed.POST("/docker/containers/:id/restart", restartDockerContainer(d))
+	authed.GET("/docker/containers/:id/logs", dockerContainerLogs(d))
+	authed.POST("/docker/containers/:id/exec", execDockerContainer(d))
+	authed.GET("/docker/images", listDockerImages(d))
+	authed.GET("/docker/volumes", listDockerVolumes(d))
+	authed.GET("/docker/networks", listDockerNetworks(d))
 }
