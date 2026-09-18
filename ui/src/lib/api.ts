@@ -146,6 +146,16 @@ export interface DockerExecResult {
   exitCode: number
 }
 
+export interface Extension {
+  id: string
+  name: string
+  version: string
+  kind: string
+  source: string
+  enabled: boolean
+  permissions: string[]
+}
+
 export const api = {
   verifyToken: (token: string) =>
     request<{ ok: boolean }>('/auth/token/verify', {
@@ -199,4 +209,11 @@ export const api = {
   listDockerImages: () => request<DockerImage[]>('/docker/images'),
   listDockerVolumes: () => request<DockerVolume[]>('/docker/volumes'),
   listDockerNetworks: () => request<DockerNetwork[]>('/docker/networks'),
+
+  listExtensions: () => request<Extension[]>('/extensions'),
+  installExtension: (path: string) =>
+    request<Extension>('/extensions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) }),
+  removeExtension: (id: string) => request(`/extensions/${encodeURIComponent(id)}?confirm=true`, { method: 'DELETE' }),
+  enableExtension: (id: string) => request<Extension>(`/extensions/${encodeURIComponent(id)}/enable`, { method: 'POST' }),
+  disableExtension: (id: string) => request<Extension>(`/extensions/${encodeURIComponent(id)}/disable`, { method: 'POST' }),
 }

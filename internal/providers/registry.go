@@ -29,6 +29,16 @@ func (r *Registry) RegisterRuntime(p RuntimeProvider) {
 	r.runtimes[p.Kind()] = p
 }
 
+// UnregisterRuntime removes any RuntimeProvider registered under kind.
+// Safe to call for a kind that isn't registered (a no-op). Used by
+// internal/domain/extension's Disable to pull an external provider back
+// out of the Registry before stopping its subprocess (Phase 11, §17).
+func (r *Registry) UnregisterRuntime(kind string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.runtimes, kind)
+}
+
 // Runtime looks up a registered RuntimeProvider by kind. ok is false when
 // nothing is registered for that kind.
 func (r *Registry) Runtime(kind string) (p RuntimeProvider, ok bool) {

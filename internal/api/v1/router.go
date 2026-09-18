@@ -62,4 +62,10 @@ func Mount(g *gin.Engine, d Deps) {
 	authed.GET("/docker/images", listDockerImages(d))
 	authed.GET("/docker/volumes", listDockerVolumes(d))
 	authed.GET("/docker/networks", listDockerNetworks(d))
+
+	authed.GET("/extensions", listExtensions(d))
+	authed.POST("/extensions", installExtension(d))
+	authed.DELETE("/extensions/:id", removeExtension(d))
+	authed.POST("/extensions/:id/enable", enableExtension(d))
+	authed.POST("/extensions/:id/disable", disableExtension(d))
 }

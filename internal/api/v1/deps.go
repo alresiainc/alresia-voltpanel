@@ -7,6 +7,7 @@ package v1
 import (
 	"database/sql"
 
+	"github.com/alresiainc/alresia-voltpanel/internal/domain/extension"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/docker"
@@ -35,6 +36,11 @@ type Deps struct {
 	// and report a clean "Docker not available" error rather than assuming
 	// a non-nil client means a live daemon.
 	Docker *docker.Client
+	// Extensions loads/enables/disables external providers (§17 Phase 11)
+	// and registers/unregisters them into Providers above -- from any
+	// handler's point of view, an enabled extension's subprocess is
+	// indistinguishable from a built-in provider.
+	Extensions *extension.Repository
 }
 
 func (d Deps) DB() *sql.DB { return d.Store.DB() }

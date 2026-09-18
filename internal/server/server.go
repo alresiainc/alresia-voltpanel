@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	v1 "github.com/alresiainc/alresia-voltpanel/internal/api/v1"
+	"github.com/alresiainc/alresia-voltpanel/internal/domain/extension"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/docker"
@@ -35,9 +36,10 @@ type Options struct {
 }
 
 type Server struct {
-	opt Options
-	r   *gin.Engine
-	mgr *service.Manager
+	opt        Options
+	r          *gin.Engine
+	mgr        *service.Manager
+	extensions *extension.Repository
 }
 
 // New wires the daemon's subsystems (storage, process manager, WS hub,
@@ -75,14 +77,20 @@ func New(opt Options) (*Server, error) {
 		log.Printf("volt: docker provider unavailable: %v", err)
 	}
 
-	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient})
+	extensions := extension.NewRepository(st.DB(), registry)
+	// Re-registers every previously-enabled extension's subprocess into
+	// registry on startup -- an enabled extension survives a daemon
+	// restart, exactly like a built-in provider always being there.
+	extensions.LoadEnabled(context.Background())
+
+	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Extensions: extensions})
 
 	// Public, unversioned.
 	g.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
 
 	mountStaticUI(g, opt.EmbeddedFS)
 
-	return &Server{opt: opt, r: g, mgr: mgr}, nil
+	return &Server{opt: opt, r: g, mgr: mgr, extensions: extensions}, nil
 }
 
 // StartAutostartServices runs the Phase 5 dependency-ordered autostart pass
