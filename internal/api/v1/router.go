@@ -62,4 +62,12 @@ func Mount(g *gin.Engine, d Deps) {
 	authed.GET("/docker/images", listDockerImages(d))
 	authed.GET("/docker/volumes", listDockerVolumes(d))
 	authed.GET("/docker/networks", listDockerNetworks(d))
+
+	authed.GET("/integrations", listIntegrations(d))
+	authed.POST("/integrations", createIntegration(d))
+	authed.DELETE("/integrations/:id", deleteIntegration(d))
+
+	authed.GET("/git/repos", listGitRepos(d))
+	authed.POST("/git/clone", cloneGitRepo(d))
+	authed.GET("/git/repos/:owner/:repo/branches", gitBranches(d))
 }

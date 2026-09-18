@@ -75,7 +75,12 @@ func New(opt Options) (*Server, error) {
 		log.Printf("volt: docker provider unavailable: %v", err)
 	}
 
-	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient})
+	secrets, err := security.NewSecretStore(st.DB(), opt.CfgDir)
+	if err != nil {
+		return nil, err
+	}
+
+	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Secrets: secrets})
 
 	// Public, unversioned.
 	g.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })

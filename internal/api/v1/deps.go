@@ -35,6 +35,15 @@ type Deps struct {
 	// and report a clean "Docker not available" error rather than assuming
 	// a non-nil client means a live daemon.
 	Docker *docker.Client
+	// Secrets is the §9.7 Secret abstraction (internal/security.SecretStore)
+	// -- git.go stores integration PATs through it, never as plaintext DB
+	// rows.
+	Secrets *security.SecretStore
+	// GitHubBaseURL overrides the GitHub REST API base URL used by git.go's
+	// handlers. Empty in production (real api.github.com); tests set it to
+	// an httptest.NewServer fake so nothing in the test suite ever makes a
+	// real network call.
+	GitHubBaseURL string
 }
 
 func (d Deps) DB() *sql.DB { return d.Store.DB() }
