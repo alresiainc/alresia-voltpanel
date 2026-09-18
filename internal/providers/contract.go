@@ -18,6 +18,7 @@ package providers
 import (
 	"context"
 	"io"
+	"time"
 )
 
 // ProgressFunc reports incremental progress during a long-running provider
@@ -183,21 +184,68 @@ type SSLProvider interface {
 	TrustCA(ctx context.Context, confirmed bool) error
 }
 
+// RemoteFileInfo is one entry returned by RemoteSession.ListDir -- the
+// minimal shape a remote file browser (Phase 7, internal/providers/remote/ssh)
+// needs to render a listing, over SFTP.
+type RemoteFileInfo struct {
+	Name    string    `json:"name"`
+	Path    string    `json:"path"`
+	IsDir   bool      `json:"isDir"`
+	Size    int64     `json:"size"`
+	Mode    string    `json:"mode"`
+	ModTime time.Time `json:"modTime"`
+}
+
+// RemoteMetrics is a best-effort, provider-agnostic snapshot of a remote
+// server's live state -- deliberately shaped like the local
+// ServiceLifecycle/ServiceStatus story (§7's explicit note that remote
+// services should look like local ones to the UI) rather than a rich,
+// provider-specific metrics format. Raw carries anything else parsed
+// out of the underlying command's output (e.g. /proc/meminfo fields) that
+// doesn't have its own struct field yet.
+type RemoteMetrics struct {
+	Uptime      string            `json:"uptime"`
+	LoadAverage string            `json:"loadAverage"`
+	MemTotalKB  int64             `json:"memTotalKb"`
+	MemFreeKB   int64             `json:"memFreeKb"`
+	Raw         map[string]string `json:"raw,omitempty"`
+}
+
 // RemoteSession exposes operations over one already-established remote
-// (SSH) connection. Kept intentionally minimal here -- Phase 7 fills in the
-// real Exec/FileSystem/Docker sub-interfaces.
+// (SSH) connection -- Exec, a basic SFTP-backed file browser, and a
+// best-effort Metrics call. Implemented in Phase 7
+// (internal/providers/remote/ssh). It never assumes a Volt daemon runs on
+// the far end (§7): every operation is a plain command or SFTP call any
+// sshd supports.
 type RemoteSession interface {
-	Exec(ctx context.Context, command string) (io.ReadCloser, error)
+	// Exec runs command and returns its captured stdout/stderr once it
+	// exits (or ctx is cancelled, in which case the session is closed and
+	// ctx.Err() is returned alongside whatever output was captured so far).
+	Exec(ctx context.Context, command string) (stdout, stderr []byte, err error)
+	// ListDir lists one remote directory over SFTP.
+	ListDir(ctx context.Context, path string) ([]RemoteFileInfo, error)
+	// ReadFile reads one remote file's full contents over SFTP.
+	ReadFile(ctx context.Context, path string) ([]byte, error)
+	// WriteFile writes (creating or truncating) one remote file over SFTP.
+	WriteFile(ctx context.Context, path string, data []byte) error
+	// Metrics reports a best-effort snapshot of the remote host's basic
+	// stats (uptime/load/memory) -- see RemoteMetrics.
+	Metrics(ctx context.Context) (RemoteMetrics, error)
 	Close() error
 }
 
 // Server is the minimal shape RemoteProvider operates on until Phase 7
-// formalizes internal/domain/server.
+// formalizes internal/domain/server. AuthMethod is "agent" (default,
+// preferred per §9.9) or "key"; SecretRef is only meaningful for "key" and
+// is resolved through the Secret abstraction (internal/security), never a
+// plaintext key file.
 type Server struct {
-	ID       string
-	Hostname string
-	Port     int
-	Username string
+	ID         string
+	Hostname   string
+	Port       int
+	Username   string
+	AuthMethod string
+	SecretRef  string
 }
 
 // RemoteProvider connects to a remote server. It never assumes a Volt

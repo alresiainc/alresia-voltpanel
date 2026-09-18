@@ -35,6 +35,14 @@ type Deps struct {
 	// and report a clean "Docker not available" error rather than assuming
 	// a non-nil client means a live daemon.
 	Docker *docker.Client
+	// Secrets is the Secret abstraction (§9.7) servers.go stores/resolves
+	// SSH key material through -- the `secrets` table only ever sees
+	// storage_backend metadata, never plaintext.
+	Secrets *security.SecretStore
+	// Remote is the RemoteProvider (§7) servers.go connects through for
+	// TestConnection/exec/metrics/file-browsing. Never nil in production
+	// (internal/providers/remote/ssh.New()); tests may swap in a fake.
+	Remote providers.RemoteProvider
 }
 
 func (d Deps) DB() *sql.DB { return d.Store.DB() }
