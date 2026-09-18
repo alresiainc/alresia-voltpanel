@@ -21,38 +21,53 @@ builds:
 
 archives:
   - id: default
-    builds: [voltpanel]
+    ids: [voltpanel]
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
 
 nfpms:
   - id: linux-packages
-    builds: [voltpanel]
+    ids: [voltpanel]
+    # bindir tells GoReleaser/nfpm where to place the matched build's own
+    # binary automatically -- no manual `contents` entry for it needed
+    # (and none should be added: GoReleaser stages each cross-compiled
+    # binary in its own per-target working directory, e.g.
+    # dist/voltpanel_linux_amd64_v1/voltpanel, not a flat dist/voltpanel,
+    # so a fixed `src: ./dist/voltpanel` path -- what this config had
+    # before -- can never resolve for a real multi-platform build).
+    bindir: /usr/bin
     formats: [deb, rpm]
     maintainer: "Alresia <dev@alresia.com>"
     description: "Alresia VoltPanel local server management daemon"
-    license: MIT
+    license: Apache-2.0
     vendor: Alresia
     homepage: https://alresia.com
     contents:
-      - src: ./dist/voltpanel
-        dst: /usr/bin/voltpanel
-        file_info:
-          mode: 0755
       - src: ./packaging/voltpanel.service
         dst: /lib/systemd/system/voltpanel.service
     scripts:
       postinstall: packaging/scripts/postinstall.sh
 
 brews:
+  # Disabled for now: pushing here needs a PAT with write access to the
+  # separate alresiainc/homebrew-tap repo (the default, same-repo
+  # GITHUB_TOKEN can't cross repo boundaries), and that repo is currently
+  # private -- Homebrew taps must be public for `brew tap`/`brew install`
+  # to work for anyone outside the org. To enable: make homebrew-tap
+  # public, create a PAT scoped to it, add it as a repo secret (e.g.
+  # HOMEBREW_TAP_GITHUB_TOKEN) in alresia-voltpanel's settings, reference
+  # it via `token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"` below, and flip
+  # skip_upload back to false.
   - name: voltpanel
+    skip_upload: true
     repository:
       owner: alresiainc
       name: homebrew-tap
     directory: Formula
     description: "Alresia VoltPanel local server management daemon"
     homepage: https://alresia.com
+    license: "Apache-2.0"
     service: |
       run [opt_bin/"voltpanel"]
       keep_alive true
@@ -65,7 +80,7 @@ checksum:
   name_template: "checksums.txt"
 
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-next"
 
 changelog:
   disable: true
