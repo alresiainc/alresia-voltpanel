@@ -57,6 +57,17 @@ func (s *Store) ListServiceRecords() ([]ServiceRecord, error) {
 	return listServiceRecords(s.db)
 }
 
+// DeleteServiceRecordsForProject removes every persisted service row tied
+// to projectID -- called when a project itself is deleted, since
+// services.project_id is a foreign key with no ON DELETE CASCADE and
+// leaving a row behind would otherwise make the project delete fail
+// outright. Callers are responsible for stopping any of these still
+// actually running first; this only touches the persisted record.
+func (s *Store) DeleteServiceRecordsForProject(projectID string) error {
+	_, err := s.db.Exec(`DELETE FROM services WHERE project_id = ?`, projectID)
+	return err
+}
+
 func upsertServiceRecord(db *sql.DB, r ServiceRecord) error {
 	args, _ := json.Marshal(r.Args)
 	env, _ := json.Marshal(r.Env)

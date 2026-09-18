@@ -9,6 +9,7 @@ package v1
 import (
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/domainname"
 	"github.com/gin-gonic/gin"
@@ -90,6 +91,22 @@ func createDomain(d Deps) gin.HandlerFunc {
 		}
 
 		audit(d.DB(), "domain.create", "domain", domain.ID, "ok")
+
+		// If this domain is bound to a project that's already running,
+		// point the reverse proxy at it immediately rather than making
+		// the user restart the project just to pick up the new domain.
+		if body.ProjectID != "" && d.Proxy != nil {
+			if live, ok := d.Mgr.Get(projectServiceID(body.ProjectID)); ok {
+				if portStr := live.Env["PORT"]; portStr != "" {
+					d.Proxy.Set(domain.Hostname, "127.0.0.1:"+portStr)
+					if port, err := strconv.Atoi(portStr); err == nil {
+						_ = repo.SetPort(domain.ID, port)
+						domain.Port = port
+					}
+				}
+			}
+		}
+
 		c.JSON(http.StatusCreated, domain)
 	}
 }
@@ -117,6 +134,9 @@ func deleteDomain(d Deps) gin.HandlerFunc {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "failed to remove hosts-file entry: " + err.Error()})
 				return
 			}
+		}
+		if d.Proxy != nil {
+			d.Proxy.Remove(domain.Hostname)
 		}
 
 		err = repo.DeleteDomain(id)

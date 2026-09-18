@@ -9,10 +9,13 @@ import (
 
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/deployment"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/extension"
+	"github.com/alresiainc/alresia-voltpanel/internal/domain/job"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
 	"github.com/alresiainc/alresia-voltpanel/internal/pipeline"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/docker"
+	"github.com/alresiainc/alresia-voltpanel/internal/providers/pkgmanager/brew"
+	"github.com/alresiainc/alresia-voltpanel/internal/proxy"
 	"github.com/alresiainc/alresia-voltpanel/internal/security"
 	"github.com/alresiainc/alresia-voltpanel/internal/storage"
 	"github.com/alresiainc/alresia-voltpanel/internal/ws"
@@ -71,6 +74,23 @@ type Deps struct {
 	// PipelineEngine runs Phase 10 pipeline step definitions -- its
 	// "deploy" step kind delegates straight to DeployEngine above.
 	PipelineEngine *pipeline.Engine
+	// Proxy is the reverse-proxy routing table (internal/proxy) that maps
+	// a bound domain's hostname to whichever local port its project is
+	// actually running on right now -- see projects.go's startProject/
+	// stopProject and domains.go's create/delete, which are what keep it
+	// in sync. Never nil in production; nil-checked anyway so router
+	// tests that don't care about proxying can omit it.
+	Proxy *proxy.Router
+	// Packages drives Homebrew for install/upgrade/uninstall/version-switch
+	// (§ "install fresh PHP/MySQL/PostgreSQL/Redis..."). Nil on platforms
+	// this daemon runs on without Homebrew even being a concept (Windows);
+	// packages.go handlers probe Available() per request, same pattern as
+	// Docker above, rather than assuming non-nil means usable.
+	Packages *brew.Provider
+	// Jobs persists the background install/upgrade/uninstall operations
+	// Packages kicks off -- see internal/domain/job for why those need to
+	// survive a page refresh instead of just living in memory.
+	Jobs *job.Repository
 }
 
 func (d Deps) DB() *sql.DB { return d.Store.DB() }

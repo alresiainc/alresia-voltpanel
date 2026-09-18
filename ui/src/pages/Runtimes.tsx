@@ -1,9 +1,18 @@
 import React, { useEffect, useState } from 'react'
+import { Layers, RefreshCw, Search } from 'lucide-react'
 import { api, Runtime } from '../lib/api'
+import { Badge, Button, Card, EmptyState, ErrorNote, PageHeader, Skeleton, Table, Td, Th, Tone } from '../components/ui'
+
+const statusTone: Record<string, Tone> = {
+  installed: 'success',
+  installing: 'warning',
+  missing: 'neutral',
+}
 
 export default function Runtimes() {
-  const [runtimes, setRuntimes] = useState<Runtime[]>([])
+  const [runtimes, setRuntimes] = useState<Runtime[] | null>(null)
   const [loading, setLoading] = useState(false)
+  const [detecting, setDetecting] = useState('')
   const [error, setError] = useState('')
 
   const load = () => {
@@ -17,8 +26,8 @@ export default function Runtimes() {
   useEffect(() => { load() }, [])
 
   const detect = (kind: string) => {
-    setLoading(true)
-    api.detectRuntime(kind).then(load).catch(e => setError(e.message)).finally(() => setLoading(false))
+    setDetecting(kind)
+    api.detectRuntime(kind).then(load).catch(e => setError(e.message)).finally(() => setDetecting(''))
   }
 
   const setDefault = (kind: string, version: string) => {
@@ -26,57 +35,65 @@ export default function Runtimes() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <button onClick={load} className="border px-3 py-1" disabled={loading}>
-          {loading ? 'Refreshing…' : 'Refresh all'}
-        </button>
-        {error && <span className="text-red-600 text-sm">{error}</span>}
-      </div>
+    <div>
+      <PageHeader
+        title="Runtimes"
+        description="Detected language runtimes on this machine and their installed versions."
+        actions={<Button variant="secondary" onClick={load} disabled={loading}><RefreshCw size={14} className={`mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh all</Button>}
+      />
 
-      {runtimes.length === 0 && !loading && (
-        <div className="text-sm text-gray-500">No runtimes detected yet. Click "Refresh all" to scan this machine.</div>
+      {error && <div className="mb-4"><ErrorNote>{error}</ErrorNote></div>}
+
+      {runtimes === null && (
+        <div className="space-y-4">
+          <Skeleton className="h-40" />
+          <Skeleton className="h-40" />
+        </div>
       )}
 
-      {runtimes.map(rt => (
-        <div key={rt.id} className="border p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="font-semibold">{rt.name} <span className="text-gray-500 text-sm">({rt.kind})</span></div>
-            <button onClick={() => detect(rt.kind)} className="border px-2 py-1 text-sm">Detect</button>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr>
-                <th className="text-left">Version</th>
-                <th className="text-left">Install path</th>
-                <th className="text-left">Status</th>
-                <th className="text-left">Default</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rt.versions.map(v => (
-                <tr key={v.id} className="border-b">
-                  <td>{v.version}</td>
-                  <td className="text-gray-600">{v.installPath || '—'}</td>
-                  <td>{v.status}</td>
-                  <td>{v.isDefault ? 'Yes' : ''}</td>
-                  <td className="text-right">
-                    {!v.isDefault && (
-                      <button onClick={() => setDefault(rt.kind, v.version)} className="border px-2 py-1">
-                        Set default
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {rt.versions.length === 0 && (
-                <tr><td colSpan={5} className="text-gray-500">No versions detected.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      ))}
+      {runtimes?.length === 0 && (
+        <EmptyState
+          icon={<Layers size={28} />}
+          title="No runtimes detected yet"
+          description="Click Refresh all to scan this machine for installed Node.js, PHP, and other runtimes."
+          action={<Button variant="primary" onClick={load}>Refresh all</Button>}
+        />
+      )}
+
+      <div className="space-y-4">
+        {runtimes?.map(rt => (
+          <Card
+            key={rt.id}
+            title={<span>{rt.name} <span className="font-normal text-slate-400">({rt.kind})</span></span>}
+            actions={<Button size="sm" onClick={() => detect(rt.kind)} disabled={detecting === rt.kind}>
+              <Search size={13} className="mr-1" /> {detecting === rt.kind ? 'Detecting…' : 'Detect'}
+            </Button>}
+          >
+            {rt.versions.length === 0 ? (
+              <div className="py-2 text-sm text-slate-400">No versions detected.</div>
+            ) : (
+              <Table>
+                <thead><tr><Th>Version</Th><Th>Install path</Th><Th>Status</Th><Th>Default</Th><Th /></tr></thead>
+                <tbody>
+                  {rt.versions.map(v => (
+                    <tr key={v.id}>
+                      <Td className="font-medium text-slate-900">{v.version}</Td>
+                      <Td className="font-mono text-xs text-slate-500">{v.installPath || '—'}</Td>
+                      <Td><Badge tone={statusTone[v.status] ?? 'neutral'}>{v.status}</Badge></Td>
+                      <Td>{v.isDefault && <Badge tone="info">Default</Badge>}</Td>
+                      <Td className="text-right">
+                        {!v.isDefault && (
+                          <Button size="sm" onClick={() => setDefault(rt.kind, v.version)}>Set default</Button>
+                        )}
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </Card>
+        ))}
+      </div>
     </div>
   )
 }

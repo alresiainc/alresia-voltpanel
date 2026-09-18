@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react'
+import { Puzzle, Trash2 } from 'lucide-react'
 import { api, ApiError, Extension } from '../lib/api'
+import { Badge, Button, Card, EmptyState, ErrorNote, Input, PageHeader, Table, Td, Th } from '../components/ui'
 
 export default function Extensions() {
-  const [extensions, setExtensions] = useState<Extension[]>([])
+  const [extensions, setExtensions] = useState<Extension[] | null>(null)
   const [path, setPath] = useState('')
   const [error, setError] = useState('')
 
-  const load = () => api.listExtensions().then(setExtensions).catch(() => {})
+  const load = () => api.listExtensions().then(setExtensions).catch(() => setExtensions([]))
   useEffect(() => { load() }, [])
 
   const install = () => {
@@ -27,39 +29,40 @@ export default function Extensions() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="border p-3 space-y-2">
+    <div>
+      <PageHeader title="Extensions" description="External providers run as a separate process speaking a small, versioned protocol." />
+
+      <Card title="Install from a local path" className="mb-4">
         <div className="flex gap-2">
-          <input placeholder="local path to extension directory" value={path} onChange={e => setPath(e.target.value)} className="border px-2 w-96" />
-          <button onClick={install} className="border px-3">Install from path</button>
+          <Input className="w-96" placeholder="local path to extension directory" value={path} onChange={e => setPath(e.target.value)} />
+          <Button variant="primary" onClick={install}>Install</Button>
         </div>
-        {error && <div className="text-red-600 text-sm">{error}</div>}
-      </div>
-      <table className="w-full text-sm">
-        <thead>
-          <tr>
-            <th className="text-left">Name</th>
-            <th>Version</th>
-            <th>Kind</th>
-            <th>Enabled</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {extensions.map(e => (
-            <tr key={e.id} className="border-b">
-              <td>{e.name}</td>
-              <td className="text-center">{e.version}</td>
-              <td className="text-center">{e.kind}</td>
-              <td className="text-center">{e.enabled ? 'yes' : 'no'}</td>
-              <td className="text-right space-x-2">
-                <button onClick={() => toggle(e)} className="border px-2">{e.enabled ? 'Disable' : 'Enable'}</button>
-                <button onClick={() => remove(e.id)} className="border px-2">Remove</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+        {error && <div className="mt-2"><ErrorNote>{error}</ErrorNote></div>}
+      </Card>
+
+      {extensions?.length === 0 ? (
+        <EmptyState icon={<Puzzle size={28} />} title="No extensions installed" description="Install one from a local path above." />
+      ) : (
+        <Card bodyClassName="p-0">
+          <Table>
+            <thead><tr><Th>Name</Th><Th>Version</Th><Th>Kind</Th><Th>Status</Th><Th /></tr></thead>
+            <tbody>
+              {extensions?.map(e => (
+                <tr key={e.id}>
+                  <Td className="font-medium text-slate-900">{e.name}</Td>
+                  <Td className="text-xs text-slate-500">{e.version}</Td>
+                  <Td className="text-xs text-slate-500">{e.kind}</Td>
+                  <Td><Badge tone={e.enabled ? 'success' : 'neutral'}>{e.enabled ? 'Enabled' : 'Disabled'}</Badge></Td>
+                  <Td className="text-right space-x-2 whitespace-nowrap">
+                    <Button size="sm" onClick={() => toggle(e)}>{e.enabled ? 'Disable' : 'Enable'}</Button>
+                    <Button size="sm" variant="danger" onClick={() => remove(e.id)}><Trash2 size={12} /></Button>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </Card>
+      )}
     </div>
   )
 }

@@ -2,5 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: light dark; }
-body { font-family: ui-sans-serif, system-ui; margin: 0; }
+:root { color-scheme: light; }
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  margin: 0;
+  background-color: #f8fafc; /* slate-50 */
+  color: #0f172a; /* slate-900 */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Thin, unobtrusive scrollbars for log/console panes and the sidebar. */
+.volt-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.volt-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.volt-scroll::-webkit-scrollbar-track { background: transparent; }
+.volt-scroll::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 9999px; }

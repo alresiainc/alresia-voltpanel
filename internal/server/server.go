@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -15,16 +16,19 @@ import (
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/deployment"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/extension"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/integration"
+	"github.com/alresiainc/alresia-voltpanel/internal/domain/job"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/server"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
 	"github.com/alresiainc/alresia-voltpanel/internal/pipeline"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/docker"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/domainprovider/hosts"
+	"github.com/alresiainc/alresia-voltpanel/internal/providers/pkgmanager/brew"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/remote/ssh"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/runtime/node"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/runtime/php"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/ssl/localca"
+	"github.com/alresiainc/alresia-voltpanel/internal/proxy"
 	"github.com/alresiainc/alresia-voltpanel/internal/security"
 	"github.com/alresiainc/alresia-voltpanel/internal/storage"
 	"github.com/alresiainc/alresia-voltpanel/internal/ws"
@@ -32,10 +36,16 @@ import (
 )
 
 type Options struct {
-	Port  int
-	Bind  string
-	Dev   bool
-	Token string
+	Port int
+	Bind string
+	Dev  bool
+	// ProxyPort is where the reverse proxy (internal/proxy) listens for
+	// bound-domain traffic -- separate from Port (the API/UI port) since
+	// this one's Host-header routing serves arbitrary project ports, not
+	// VoltPanel's own UI. 0 picks the default (7080), probed forward like
+	// Port if taken.
+	ProxyPort int
+	Token     string
 	// SessionSecret signs session cookies (see internal/security.SessionAuth).
 	SessionSecret string
 	EmbeddedFS    embed.FS
@@ -47,6 +57,9 @@ type Server struct {
 	r          *gin.Engine
 	mgr        *service.Manager
 	http       *http.Server
+	proxyHTTP  *http.Server
+	proxy      *proxy.Router
+	proxyPort  int
 	extensions *extension.Repository
 }
 
@@ -116,14 +129,19 @@ func New(opt Options) (*Server, error) {
 		DeployEngine: deployEngine,
 	}
 
-	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Domains: domainProvider, SSL: sslProvider, Extensions: extensions, Secrets: secrets, Remote: sshProvider, DeployEngine: deployEngine, PipelineEngine: pipelineEngine})
+	proxyRouter := proxy.NewRouter()
+
+	jobs := job.NewRepository(st.DB())
+	packages := brew.New(hub, jobs, filepath.Join(opt.CfgDir, "logs", "jobs"))
+
+	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Domains: domainProvider, SSL: sslProvider, Extensions: extensions, Secrets: secrets, Remote: sshProvider, DeployEngine: deployEngine, PipelineEngine: pipelineEngine, Proxy: proxyRouter, Packages: packages, Jobs: jobs})
 
 	// Public, unversioned.
 	g.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
 
 	mountStaticUI(g, opt.EmbeddedFS)
 
-	return &Server{opt: opt, r: g, mgr: mgr, extensions: extensions}, nil
+	return &Server{opt: opt, r: g, mgr: mgr, extensions: extensions, proxy: proxyRouter}, nil
 }
 
 // Close releases resources that outlive a single request but must stop
@@ -177,10 +195,27 @@ func mountStaticUI(g *gin.Engine, embedded embed.FS) {
 
 // Run serves until Shutdown is called (typically from a signal handler in
 // main), then returns cleanly instead of blocking forever like gin's own
-// Engine.Run -- this is what lets `volt stop` (§12) actually work.
+// Engine.Run -- this is what lets `volt stop` (§12) actually work. It also
+// starts the reverse-proxy listener (internal/proxy) on its own port,
+// probed forward from opt.ProxyPort exactly like the main port is, so a
+// second daemon instance (or anything else already on that port) doesn't
+// keep bound domains from working.
 func (s *Server) Run() error {
 	addr := s.opt.Bind + ":" + strconv.Itoa(s.opt.Port)
 	s.http = &http.Server{Addr: addr, Handler: s.r}
+
+	proxyPort := probeProxyPort(s.opt.ProxyPort)
+	s.proxyPort = proxyPort
+	s.proxy.SetPort(proxyPort)
+	proxyAddr := s.opt.Bind + ":" + strconv.Itoa(proxyPort)
+	s.proxyHTTP = &http.Server{Addr: proxyAddr, Handler: s.proxy.Handler()}
+	log.Printf("volt: reverse proxy listening on http://%s (bound domains are reachable at http://<hostname>:%d)", proxyAddr, proxyPort)
+	go func() {
+		if err := s.proxyHTTP.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("volt: proxy listener error: %v", err)
+		}
+	}()
+
 	err := s.http.ListenAndServe()
 	if err == http.ErrServerClosed {
 		return nil
@@ -188,9 +223,35 @@ func (s *Server) Run() error {
 	return err
 }
 
-// Shutdown gracefully stops the HTTP server, waiting up to the given
-// context's deadline for in-flight requests to finish.
+// ProxyPort reports the port the reverse proxy actually ended up on, once
+// Run has started it (0 before that).
+func (s *Server) ProxyPort() int { return s.proxyPort }
+
+// probeProxyPort mirrors cmd/voltpanel/main.go's probePort for the main
+// API port -- same reasoning, kept local to avoid an import cycle back
+// into cmd/voltpanel.
+func probeProxyPort(start int) int {
+	if start <= 0 {
+		start = 7080
+	}
+	p := start
+	for i := 0; i < 20; i++ {
+		ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(p))
+		if err == nil {
+			_ = ln.Close()
+			return p
+		}
+		p++
+	}
+	return start
+}
+
+// Shutdown gracefully stops both the main and proxy HTTP servers, waiting
+// up to the given context's deadline for in-flight requests to finish.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.proxyHTTP != nil {
+		_ = s.proxyHTTP.Shutdown(ctx)
+	}
 	if s.http == nil {
 		return nil
 	}

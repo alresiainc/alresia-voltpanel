@@ -211,9 +211,12 @@ func (s *Store) ListApps() []App {
 }
 
 type FileEntry struct {
-	Name  string `json:"name"`
-	Path  string `json:"path"`
-	IsDir bool   `json:"isDir"`
+	Name    string    `json:"name"`
+	Path    string    `json:"path"`
+	IsDir   bool      `json:"isDir"`
+	Size    int64     `json:"size"`
+	ModTime time.Time `json:"modTime"`
+	Mode    string    `json:"mode"`
 }
 
 func (s *Store) ListPath(p string) ([]FileEntry, error) {
@@ -227,7 +230,16 @@ func (s *Store) ListPath(p string) ([]FileEntry, error) {
 	}
 	out := make([]FileEntry, 0, len(entries))
 	for _, e := range entries {
-		out = append(out, FileEntry{Name: e.Name(), Path: filepath.Join(real, e.Name()), IsDir: e.IsDir()})
+		fe := FileEntry{Name: e.Name(), Path: filepath.Join(real, e.Name()), IsDir: e.IsDir()}
+		// os.ReadDir already paid for a Lstat per entry; Info() is that
+		// same result, not a second syscall -- cheap to always include
+		// size/modtime/permissions rather than making the UI ask twice.
+		if info, err := e.Info(); err == nil {
+			fe.Size = info.Size()
+			fe.ModTime = info.ModTime()
+			fe.Mode = info.Mode().String()
+		}
+		out = append(out, fe)
 	}
 	return out, nil
 }
@@ -238,6 +250,17 @@ func (s *Store) WriteFile(p string, b []byte) error {
 		return err
 	}
 	return os.WriteFile(real, b, 0o644)
+}
+
+// ReadFile returns a file's raw content -- the read-side counterpart to
+// WriteFile, used by the file manager's editor to load what's actually on
+// disk instead of starting from a blank textarea.
+func (s *Store) ReadFile(p string) ([]byte, error) {
+	real, err := s.fs.Resolve(p)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(real)
 }
 
 func (s *Store) DeletePath(p string) error {

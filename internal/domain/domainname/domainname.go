@@ -169,6 +169,58 @@ func (r *Repository) SetSSLEnabled(id string, enabled bool) error {
 	return nil
 }
 
+// SetPort updates a domain's target port -- called once a bound project
+// actually starts and is assigned a real listening port, so the port this
+// domain reports reflects where it's really being proxied to rather than
+// just the metadata a user typed in when creating it.
+func (r *Repository) SetPort(id string, port int) error {
+	res, err := r.db.Exec(`UPDATE domains SET port = ? WHERE id = ?`, nullablePort(port), id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// ClearProject un-binds a domain from whatever project it pointed at
+// (project_id -> NULL) without deleting the domain itself -- used when the
+// project is deleted out from under it, so the hostname mapping and any
+// issued certificate survive; only the (now-meaningless) project link and
+// live port go away.
+func (r *Repository) ClearProject(id string) error {
+	_, err := r.db.Exec(`UPDATE domains SET project_id = NULL, port = NULL WHERE id = ?`, id)
+	return err
+}
+
+// ListDomainsForProject returns every domain bound to projectID, in
+// creation order -- used to sync the reverse proxy's routing table when a
+// project starts, stops, or has a domain added/removed.
+func (r *Repository) ListDomainsForProject(projectID string) ([]Domain, error) {
+	rows, err := r.db.Query(`
+		SELECT id, hostname, COALESCE(project_id, ''), COALESCE(port, 0), provider, ssl_enabled, enabled, created_at
+		FROM domains WHERE project_id = ? ORDER BY created_at
+	`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Domain{}
+	for rows.Next() {
+		d, err := scanDomain(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
 // CreateCertificate persists a certificate row with an explicit id -- the
 // caller (internal/api/v1/ssl.go) passes the same ID an SSLProvider's
 // IssueCertificate returned, so the DB row and the on-disk PEM material

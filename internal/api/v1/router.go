@@ -44,6 +44,8 @@ func Mount(g *gin.Engine, d Deps) {
 	authed.GET("/services/:id/metrics", serviceMetrics(d))
 
 	authed.GET("/files", listFiles(d))
+	authed.GET("/files/read", readFile(d))
+	authed.GET("/files/download", downloadFile(d))
 	authed.PUT("/files", writeFile(d))
 	authed.DELETE("/files", deleteFile(d))
 	authed.POST("/files/mkdir", mkdirFile(d))
@@ -58,6 +60,20 @@ func Mount(g *gin.Engine, d Deps) {
 	authed.GET("/projects/:id", getProject(d))
 	authed.DELETE("/projects/:id", deleteProject(d))
 	authed.POST("/projects/:id/detect", redetectProject(d))
+	authed.POST("/projects/:id/start", startProject(d))
+	authed.POST("/projects/:id/stop", stopProject(d))
+
+	authed.GET("/proxy/status", proxyStatus(d))
+
+	authed.GET("/packages/installed", listInstalledPackages(d))
+	authed.GET("/packages/search", searchPackages(d))
+	authed.POST("/packages/install", installPackage(d))
+	authed.POST("/packages/upgrade", upgradePackage(d))
+	authed.POST("/packages/uninstall", uninstallPackage(d))
+	authed.POST("/packages/service", packageServiceAction(d))
+	authed.POST("/packages/versions/default", setDefaultPackageVersion(d))
+	authed.GET("/jobs", listJobs(d))
+	authed.GET("/jobs/:id", getJob(d))
 
 	authed.GET("/docker/containers", listDockerContainers(d))
 	authed.GET("/docker/containers/:id", getDockerContainer(d))

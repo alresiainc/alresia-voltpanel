@@ -1,19 +1,35 @@
 import React, { useEffect, useState } from 'react'
-import { api, ApiError, CAInfo, Domain } from '../lib/api'
+import { ExternalLink, Globe, Lock, ShieldCheck, Trash2 } from 'lucide-react'
+import { api, ApiError, CAInfo, Domain, Project, Service } from '../lib/api'
+import { Badge, Button, Card, EmptyState, ErrorNote, Input, Label, PageHeader, Select } from '../components/ui'
+
+const projectServiceId = (projectId: string) => `project:${projectId}`
 
 export default function Domains() {
-  const [domains, setDomains] = useState<Domain[]>([])
+  const [domains, setDomains] = useState<Domain[] | null>(null)
+  const [projects, setProjects] = useState<Project[]>([])
+  const [services, setServices] = useState<Service[]>([])
+  const [proxyPort, setProxyPort] = useState(0)
   const [hostname, setHostname] = useState('')
+  const [port, setPort] = useState('')
+  const [projectId, setProjectId] = useState('')
   const [ca, setCa] = useState<CAInfo | null>(null)
   const [error, setError] = useState('')
 
-  const load = () => api.listDomains().then(setDomains).catch(() => {})
-  useEffect(() => { load() }, [])
+  const load = () => {
+    api.listDomains().then(setDomains).catch(() => setDomains([]))
+    api.listServices().then(setServices).catch(() => {})
+  }
+  useEffect(() => {
+    load()
+    api.listProjects().then(setProjects).catch(() => {})
+    api.proxyStatus().then(s => setProxyPort(s.port)).catch(() => {})
+  }, [])
 
   const add = () => {
     setError('')
-    api.createDomain(hostname)
-      .then(() => { setHostname(''); load() })
+    api.createDomain(hostname, projectId ? undefined : (port ? Number(port) : undefined), projectId || undefined)
+      .then(() => { setHostname(''); setPort(''); setProjectId(''); load() })
       .catch(e => setError(e instanceof ApiError ? e.message : 'failed to add domain'))
   }
 
@@ -38,51 +54,101 @@ export default function Domains() {
     api.trustCA(true).then(() => setCa(c => c ? { ...c, trusted: true } : c)).catch(e => setError(e instanceof ApiError ? e.message : 'failed to trust CA'))
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="border p-3 space-y-2">
-        <div className="flex gap-2">
-          <input placeholder="myapp.test" value={hostname} onChange={e => setHostname(e.target.value)} className="border px-2 w-72" />
-          <button onClick={add} className="border px-3">Add domain</button>
-        </div>
-        {error && <div className="text-red-600 text-sm">{error}</div>}
-      </div>
+  const projectFor = (id?: string) => projects.find(p => p.id === id)
+  const isProjectRunning = (id?: string) => !!id && services.some(s => s.id === projectServiceId(id) && s.status === 'running')
 
-      <div className="border p-3 space-y-2">
-        <div className="font-medium">Local HTTPS</div>
-        {!ca && <button onClick={ensureCA} className="border px-3">Ensure local CA</button>}
-        {ca && (
-          <div className="text-sm space-y-1">
-            <div>CA: {ca.commonName} (expires {ca.notAfter})</div>
-            <div>Trusted by this OS: {ca.trusted ? 'yes' : 'no'}</div>
-            {!ca.trusted && <button onClick={trustCA} className="border px-3">Trust CA (modifies OS trust store)</button>}
+  return (
+    <div>
+      <PageHeader
+        title="Domains & SSL"
+        description="Map a hostname to 127.0.0.1 and route it, through VoltPanel's built-in reverse proxy, to a running project."
+      />
+
+      <Card title="Add a domain" className="mb-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <Label>Hostname</Label>
+            <Input placeholder="myapp.test" value={hostname} onChange={e => setHostname(e.target.value)} />
+          </div>
+          <div>
+            <Label>Bind to project</Label>
+            <Select value={projectId} onChange={e => setProjectId(e.target.value)}>
+              <option value="">None (manual port)</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </Select>
+          </div>
+          {!projectId && (
+            <div>
+              <Label>Port (optional)</Label>
+              <Input type="number" className="w-24" placeholder="3000" value={port} onChange={e => setPort(e.target.value)} />
+            </div>
+          )}
+          <Button variant="primary" onClick={add}>Add domain</Button>
+        </div>
+        <p className="mt-2 text-xs text-slate-400">
+          {proxyPort
+            ? <>Bound domains are reachable at <code>http://&lt;hostname&gt;:{proxyPort}</code> via VoltPanel's built-in reverse proxy — binding the bare port 80/443 needs admin privileges, which isn't wired up yet.</>
+            : 'Once bound to a running project, VoltPanel proxies requests for this hostname to that project\'s port.'}
+        </p>
+        {error && <div className="mt-2"><ErrorNote>{error}</ErrorNote></div>}
+      </Card>
+
+      <Card title="Local HTTPS" description="A local certificate authority, trusted per-machine, for issuing dev certs." className="mb-4">
+        {!ca ? (
+          <Button onClick={ensureCA}><ShieldCheck size={14} className="mr-1.5" /> Ensure local CA</Button>
+        ) : (
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            <div className="text-slate-600">{ca.commonName} <span className="text-slate-400">· expires {ca.notAfter}</span></div>
+            <Badge tone={ca.trusted ? 'success' : 'warning'}>{ca.trusted ? 'Trusted by this OS' : 'Not trusted yet'}</Badge>
+            {!ca.trusted && (
+              <Button size="sm" onClick={trustCA}>Trust CA (modifies OS trust store)</Button>
+            )}
           </div>
         )}
-      </div>
+      </Card>
 
-      <table className="w-full text-sm">
-        <thead>
-          <tr>
-            <th className="text-left">Hostname</th>
-            <th>SSL</th>
-            <th>Enabled</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {domains.map(d => (
-            <tr key={d.id} className="border-b">
-              <td>{d.hostname}</td>
-              <td className="text-center">{d.sslEnabled ? 'yes' : 'no'}</td>
-              <td className="text-center">{d.enabled ? 'yes' : 'no'}</td>
-              <td className="text-right space-x-2">
-                {!d.sslEnabled && <button onClick={() => issueCert(d.id)} className="border px-2">Issue cert</button>}
-                <button onClick={() => remove(d.id)} className="border px-2">Remove</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {domains?.length === 0 ? (
+        <EmptyState
+          icon={<Globe size={28} />}
+          title="No domains yet"
+          description="Add a hostname above to map it to 127.0.0.1 through your hosts file."
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {domains?.map(d => {
+            const project = projectFor(d.projectId)
+            const running = isProjectRunning(d.projectId)
+            const reachable = running && proxyPort ? `http://${d.hostname}:${proxyPort}` : null
+            return (
+              <Card key={d.id}>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="font-medium text-slate-900">{d.hostname}</div>
+                    {project && <div className="text-xs text-slate-400">project: {project.name}</div>}
+                    {!project && d.port ? <div className="text-xs text-slate-400">target port {d.port}</div> : null}
+                  </div>
+                  <Badge tone={d.enabled ? 'success' : 'neutral'}>{d.enabled ? 'Active' : 'Disabled'}</Badge>
+                </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <Lock size={13} className={d.sslEnabled ? 'text-emerald-500' : 'text-slate-300'} />
+                  <span className="text-xs text-slate-500">SSL {d.sslEnabled ? 'enabled' : 'disabled'}</span>
+                </div>
+                {reachable ? (
+                  <a href={reachable} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs text-emerald-600 hover:underline">
+                    <ExternalLink size={11} /> {reachable}
+                  </a>
+                ) : project ? (
+                  <div className="mt-2 text-xs text-slate-400">Project isn't running — start it from Projects to make this reachable.</div>
+                ) : null}
+                <div className="mt-3 flex gap-2 border-t border-slate-100 pt-3">
+                  {!d.sslEnabled && <Button size="sm" onClick={() => issueCert(d.id)}>Issue cert</Button>}
+                  <Button size="sm" variant="danger" className="ml-auto" onClick={() => remove(d.id)}><Trash2 size={13} /></Button>
+                </div>
+              </Card>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

@@ -3,6 +3,7 @@ package v1
 import (
 	"io"
 	"net/http"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,6 +16,35 @@ func listFiles(d Deps) gin.HandlerFunc {
 			return
 		}
 		c.JSON(http.StatusOK, list)
+	}
+}
+
+// readFile returns a file's raw content as plain text -- the read-side
+// counterpart to writeFile, so the file manager's editor can load what's
+// actually on disk instead of starting from a blank textarea.
+func readFile(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		b, err := d.Store.ReadFile(c.Query("path"))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.Data(http.StatusOK, "text/plain; charset=utf-8", b)
+	}
+}
+
+// downloadFile serves a file as an attachment (rather than inline text)
+// so a browser saves it instead of trying to render it.
+func downloadFile(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		p := c.Query("path")
+		b, err := d.Store.ReadFile(p)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.Header("Content-Disposition", "attachment; filename=\""+filepath.Base(p)+"\"")
+		c.Data(http.StatusOK, "application/octet-stream", b)
 	}
 }
 

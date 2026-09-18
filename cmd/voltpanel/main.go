@@ -59,6 +59,7 @@ func main() {
 
 	srv, err := server.New(server.Options{
 		Port:          port,
+		ProxyPort:     7080,
 		Dev:           *devFlag,
 		Bind:          "127.0.0.1",
 		Token:         cfg.Token,

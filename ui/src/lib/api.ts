@@ -51,6 +51,9 @@ export interface FileEntry {
   name: string
   path: string
   isDir: boolean
+  size: number
+  modTime: string
+  mode: string
 }
 
 export interface RuntimeVersion {
@@ -87,6 +90,39 @@ export interface Project {
   runCommand: string
   createdAt: string
   updatedAt: string
+}
+
+export interface StartProjectResult {
+  service: Service
+  port: number
+  boundDomains: string[] | null
+}
+
+export interface ProxyStatus {
+  port: number
+  routes: Record<string, string>
+}
+
+export interface PackageInfo {
+  name: string
+}
+
+export interface InstalledPackage {
+  name: string
+  versions: string[]
+  serviceStatus?: string
+}
+
+export interface Job {
+  id: string
+  kind: string
+  target: string
+  status: 'running' | 'success' | 'failed'
+  logFile: string
+  error?: string
+  exitCode?: number
+  startedAt: string
+  finishedAt?: string
 }
 
 export interface DockerPort {
@@ -305,12 +341,20 @@ export const api = {
   serviceLogs: (id: string, tail = true) => request<string>(`/services/${encodeURIComponent(id)}/logs?tail=${tail}`),
 
   listFiles: (path: string) => request<FileEntry[]>(`/files?path=${encodeURIComponent(path)}`),
+  readFile: (path: string) => request<string>(`/files/read?path=${encodeURIComponent(path)}`),
   writeFile: (path: string, content: string) =>
     request('/files', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, content }) }),
   deleteFile: (path: string) => request(`/files?path=${encodeURIComponent(path)}&confirm=true`, { method: 'DELETE' }),
   mkdir: (path: string) => request('/files/mkdir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) }),
   moveFile: (src: string, dst: string) => request('/files/move', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ src, dst }) }),
   copyFile: (src: string, dst: string) => request('/files/copy', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ src, dst }) }),
+  uploadFile: (path: string, file: File) => {
+    const form = new FormData()
+    form.append('path', path)
+    form.append('file', file)
+    return request('/files/upload', { method: 'POST', body: form })
+  },
+  downloadUrl: (path: string) => `/api/v1/files/download?path=${encodeURIComponent(path)}`,
 
   systemMetrics: () => request<Metrics>('/system/metrics'),
 
@@ -320,6 +364,10 @@ export const api = {
   getProject: (id: string) => request<Project>(`/projects/${encodeURIComponent(id)}`),
   deleteProject: (id: string) => request(`/projects/${encodeURIComponent(id)}?confirm=true`, { method: 'DELETE' }),
   detectProject: (id: string) => request<Project>(`/projects/${encodeURIComponent(id)}/detect`, { method: 'POST' }),
+  startProject: (id: string) => request<StartProjectResult>(`/projects/${encodeURIComponent(id)}/start`, { method: 'POST' }),
+  stopProject: (id: string) => request(`/projects/${encodeURIComponent(id)}/stop?confirm=true`, { method: 'POST' }),
+
+  proxyStatus: () => request<ProxyStatus>('/proxy/status'),
 
   listDockerContainers: () => request<DockerContainer[]>('/docker/containers'),
   listDockerContainersGrouped: () => request<ComposeProject[]>('/docker/containers?group=compose'),
@@ -339,8 +387,8 @@ export const api = {
   listDockerNetworks: () => request<DockerNetwork[]>('/docker/networks'),
 
   listDomains: () => request<Domain[]>('/domains'),
-  createDomain: (hostname: string, port?: number) =>
-    request<Domain>('/domains', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hostname, port }) }),
+  createDomain: (hostname: string, port?: number, projectId?: string) =>
+    request<Domain>('/domains', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hostname, port, projectId }) }),
   deleteDomain: (id: string) => request(`/domains/${encodeURIComponent(id)}?confirm=true`, { method: 'DELETE' }),
   domainConflicts: (id: string) => request<string[]>(`/domains/${encodeURIComponent(id)}/conflicts`),
   ensureCA: () => request<CAInfo>('/ssl/ca/ensure', { method: 'POST' }),
@@ -396,4 +444,16 @@ export const api = {
   deletePipeline: (id: string) => request(`/pipelines/${encodeURIComponent(id)}?confirm=true`, { method: 'DELETE' }),
   runPipeline: (id: string) => request<PipelineRun>(`/pipelines/${encodeURIComponent(id)}/run`, { method: 'POST' }),
   listPipelineRuns: (id: string) => request<PipelineRun[]>(`/pipelines/${encodeURIComponent(id)}/runs`),
+
+  listInstalledPackages: () => request<InstalledPackage[]>('/packages/installed'),
+  searchPackages: (q: string) => request<PackageInfo[]>(`/packages/search?q=${encodeURIComponent(q)}`),
+  installPackage: (name: string) => request<Job>('/packages/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
+  upgradePackage: (name: string) => request<Job>('/packages/upgrade', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
+  uninstallPackage: (name: string) => request<Job>('/packages/uninstall?confirm=true', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }),
+  packageServiceAction: (name: string, action: 'start' | 'stop' | 'restart') =>
+    request('/packages/service', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, action }) }),
+  setDefaultPackageVersion: (target: string) =>
+    request('/packages/versions/default', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target }) }),
+  listJobs: () => request<Job[]>('/jobs'),
+  getJob: (id: string) => request<Job>(`/jobs/${encodeURIComponent(id)}`),
 }
