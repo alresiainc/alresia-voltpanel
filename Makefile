@@ -3,6 +3,7 @@ DIST=dist
 UI_DIR=ui
 CMD_DIR=cmd/voltpanel
 BIN=$(DIST)/$(APP)
+VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 .PHONY: all build ui-build ui-dev clean dev test release-snapshot
 
@@ -11,8 +12,8 @@ all: build
 build: ui-build
 	@echo "Building $(APP) with embedded UI..."
 	@mkdir -p $(DIST)
-	GO111MODULE=on CGO_ENABLED=0 go build -o $(BIN) ./cmd/voltpanel
-	@echo "Built $(BIN)"
+	GO111MODULE=on CGO_ENABLED=0 go build -ldflags "-X main.Version=$(VERSION)" -o $(BIN) ./cmd/voltpanel
+	@echo "Built $(BIN) ($(VERSION))"
 
 ui-build:
 	@echo "Building UI..."
@@ -39,5 +40,5 @@ dev:
 release-snapshot:
 	goreleaser release --clean --snapshot
 
- test:
+test:
 	go test ./...

@@ -35,9 +35,10 @@ type Options struct {
 }
 
 type Server struct {
-	opt Options
-	r   *gin.Engine
-	mgr *service.Manager
+	opt  Options
+	r    *gin.Engine
+	mgr  *service.Manager
+	http *http.Server
 }
 
 // New wires the daemon's subsystems (storage, process manager, WS hub,
@@ -125,7 +126,24 @@ func mountStaticUI(g *gin.Engine, embedded embed.FS) {
 	})
 }
 
+// Run serves until Shutdown is called (typically from a signal handler in
+// main), then returns cleanly instead of blocking forever like gin's own
+// Engine.Run -- this is what lets `volt stop` (§12) actually work.
 func (s *Server) Run() error {
 	addr := s.opt.Bind + ":" + strconv.Itoa(s.opt.Port)
-	return s.r.Run(addr)
+	s.http = &http.Server{Addr: addr, Handler: s.r}
+	err := s.http.ListenAndServe()
+	if err == http.ErrServerClosed {
+		return nil
+	}
+	return err
+}
+
+// Shutdown gracefully stops the HTTP server, waiting up to the given
+// context's deadline for in-flight requests to finish.
+func (s *Server) Shutdown(ctx context.Context) error {
+	if s.http == nil {
+		return nil
+	}
+	return s.http.Shutdown(ctx)
 }
