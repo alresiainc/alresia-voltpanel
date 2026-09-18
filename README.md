@@ -28,23 +28,59 @@ HTTPS) only ever runs when you explicitly confirm it.
 
 ## Install
 
-Grab the latest release for your platform from the
-[Releases page](https://github.com/alresiainc/alresia-voltpanel/releases):
+**macOS / Linux** — one command, no package manager, nothing to download
+by hand:
 
-- **macOS / Linux**: download the `.tar.gz` for your OS/arch, or the
-  `.deb`/`.rpm` package (Linux) — installing the package also registers
-  a systemd unit.
-- **Windows**: download the `.zip`.
+```sh
+curl -fsSL https://raw.githubusercontent.com/alresiainc/alresia-voltpanel/main/scripts/install.sh | sh
+```
 
-Homebrew support is on the way (the tap isn't public yet).
+This detects your OS/arch, downloads the matching release from
+[GitHub Releases](https://github.com/alresiainc/alresia-voltpanel/releases),
+verifies its checksum, and installs the `voltpanel` binary to
+`~/.local/bin` (override with `VOLT_INSTALL_DIR`; pin a version with
+`VOLT_VERSION=v0.2.0`). If `~/.local/bin` isn't already on your `PATH`,
+the script tells you the line to add.
 
-Once installed, run `voltpanel` (or `voltpanel start`) and visit
-`http://127.0.0.1:7788`. The daemon token needed to log in is printed on
-first run and stored in `~/.volt/config.json`.
+**Windows**: download the `.zip` from the
+[Releases page](https://github.com/alresiainc/alresia-voltpanel/releases).
+
+Other options:
+
+- **Linux `.deb`/`.rpm`**: also from the Releases page — installing the
+  package additionally registers a systemd unit.
+- **Homebrew**: on the way (the tap isn't public yet).
+
+### First run
+
+```sh
+voltpanel start
+```
+
+Then visit `http://127.0.0.1:7788`. The daemon token needed to log in is
+printed on first run and stored in `~/.volt/config.json`. VoltPanel binds
+to `127.0.0.1` only — it never listens on your network.
 
 ```
 voltpanel start | stop | restart | status | logs | doctor | update | version
 ```
+
+`voltpanel update` checks the latest GitHub release against the running
+binary and tells you how to install it — it never replaces the binary
+for you. To update via the installer, just re-run the `curl | sh`
+command above.
+
+### Uninstall
+
+Remove the binary and its config:
+
+```sh
+rm "$(command -v voltpanel)"
+rm -rf ~/.volt
+```
+
+(If installed via `.deb`/`.rpm`, use your package manager instead —
+e.g. `apt remove voltpanel` / `dnf remove voltpanel`.)
 
 See [docs/cli.md](docs/cli.md) for the full CLI reference and
 [docs/install-testing.md](docs/install-testing.md) for service
