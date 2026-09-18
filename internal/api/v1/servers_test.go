@@ -33,11 +33,11 @@ func srvRequest(g *gin.Engine, method, path, token, body string) *httptest.Respo
 // behavior is already covered by internal/providers/remote/ssh's own tests
 // against an in-process fake SSH server.
 type fakeRemoteSession struct {
-	execOut       string
-	metrics       providers.RemoteMetrics
-	writeFileErr  error
-	writtenPath   string
-	writtenData   []byte
+	execOut      string
+	metrics      providers.RemoteMetrics
+	writeFileErr error
+	writtenPath  string
+	writtenData  []byte
 }
 
 func (f *fakeRemoteSession) Exec(ctx context.Context, command string) ([]byte, []byte, error) {
@@ -59,7 +59,7 @@ func (f *fakeRemoteSession) Metrics(ctx context.Context) (providers.RemoteMetric
 func (f *fakeRemoteSession) Close() error { return nil }
 
 type fakeRemoteProvider struct {
-	session   *fakeRemoteSession
+	session    *fakeRemoteSession
 	connectErr error
 }
 

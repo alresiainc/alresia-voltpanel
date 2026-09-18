@@ -14,8 +14,8 @@ import (
 )
 
 type Config struct {
-	Token string `json:"token"`
-	Port  int    `json:"port"`
+	Token     string    `json:"token"`
+	Port      int       `json:"port"`
 	CreatedAt time.Time `json:"createdAt"`
 	// SessionSecret signs short-lived session tokens issued on top of Token
 	// (see internal/security.SessionAuth). Generated once and persisted;
@@ -35,18 +35,18 @@ type Store struct {
 func (s *Store) DB() *sql.DB { return s.db }
 
 type App struct {
-	ID string `json:"id"`
-	Name string `json:"name"`
-	Command string `json:"command"`
-	Args []string `json:"args"`
-	Cwd string `json:"cwd"`
-	Env map[string]string `json:"env"`
-	PID int `json:"pid"`
-	Status string `json:"status"`
-	StartedAt *time.Time `json:"startedAt,omitempty"`
-	ExitedAt *time.Time `json:"exitedAt,omitempty"`
-	Code *int `json:"code,omitempty"`
-	LogFile string `json:"logFile"`
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	Command   string            `json:"command"`
+	Args      []string          `json:"args"`
+	Cwd       string            `json:"cwd"`
+	Env       map[string]string `json:"env"`
+	PID       int               `json:"pid"`
+	Status    string            `json:"status"`
+	StartedAt *time.Time        `json:"startedAt,omitempty"`
+	ExitedAt  *time.Time        `json:"exitedAt,omitempty"`
+	Code      *int              `json:"code,omitempty"`
+	LogFile   string            `json:"logFile"`
 }
 
 // NewStore creates a Store whose file-manager operations are sandboxed to
@@ -85,13 +85,20 @@ func NewStoreWithRoot(cfgDir, fileRoot string) (*Store, error) {
 var legacyConfigDirNames = []string{".alresia-voltpanel", ".alresia-volt"}
 
 func EnsureDirs() (string, error) {
-	home, err := os.UserHomeDir(); if err != nil { return "", err }
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
 	d := filepath.Join(home, ".volt")
 	if err := migrateLegacyDir(home, d); err != nil {
 		log.Printf("volt: warning: failed to migrate legacy config dir: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(d, "logs"), 0o755); err != nil { return "", err }
-	if err := os.MkdirAll(filepath.Join(d, "runtime"), 0o755); err != nil { return "", err }
+	if err := os.MkdirAll(filepath.Join(d, "logs"), 0o755); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Join(d, "runtime"), 0o755); err != nil {
+		return "", err
+	}
 	return d, nil
 }
 
@@ -128,33 +135,53 @@ func migrateLegacyDir(home, newDir string) error {
 }
 
 func configPath(dir string) string { return filepath.Join(dir, "config.json") }
-func appsPath(dir string) string { return filepath.Join(dir, "apps.json") }
-func (s *Store) LogDir() string { return filepath.Join(s.cfgDir, "logs") }
+func appsPath(dir string) string   { return filepath.Join(dir, "apps.json") }
+func (s *Store) LogDir() string    { return filepath.Join(s.cfgDir, "logs") }
 
 func LoadOrInitConfig() (Config, error) {
-	d, err := EnsureDirs(); if err != nil { return Config{}, err }
+	d, err := EnsureDirs()
+	if err != nil {
+		return Config{}, err
+	}
 	p := configPath(d)
 	if _, err := os.Stat(p); err == nil {
-		b, err := os.ReadFile(p); if err != nil { return Config{}, err }
-		var c Config; if err := json.Unmarshal(b, &c); err != nil { return Config{}, err }
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return Config{}, err
+		}
+		var c Config
+		if err := json.Unmarshal(b, &c); err != nil {
+			return Config{}, err
+		}
 		if c.SessionSecret == "" {
 			// Backfill for configs written before session auth existed.
 			secret, err := security.NewSessionSecret()
-			if err != nil { return Config{}, err }
+			if err != nil {
+				return Config{}, err
+			}
 			c.SessionSecret = secret
-			if err := SaveConfig(c); err != nil { return Config{}, err }
+			if err := SaveConfig(c); err != nil {
+				return Config{}, err
+			}
 		}
 		return c, nil
 	}
 	secret, err := security.NewSessionSecret()
-	if err != nil { return Config{}, err }
+	if err != nil {
+		return Config{}, err
+	}
 	c := Config{Token: uuid.NewString(), Port: 7788, CreatedAt: time.Now(), SessionSecret: secret}
-	if err := SaveConfig(c); err != nil { return Config{}, err }
+	if err := SaveConfig(c); err != nil {
+		return Config{}, err
+	}
 	return c, nil
 }
 
 func SaveConfig(c Config) error {
-	d, err := EnsureDirs(); if err != nil { return err }
+	d, err := EnsureDirs()
+	if err != nil {
+		return err
+	}
 	b, _ := json.MarshalIndent(c, "", "  ")
 	return os.WriteFile(configPath(d), b, 0o600)
 }
@@ -184,32 +211,40 @@ func (s *Store) ListApps() []App {
 }
 
 type FileEntry struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
-	IsDir bool  `json:"isDir"`
+	Name  string `json:"name"`
+	Path  string `json:"path"`
+	IsDir bool   `json:"isDir"`
 }
 
 func (s *Store) ListPath(p string) ([]FileEntry, error) {
 	real, err := s.fs.Resolve(p)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	entries, err := os.ReadDir(real)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	out := make([]FileEntry, 0, len(entries))
 	for _, e := range entries {
-		out = append(out, FileEntry{ Name: e.Name(), Path: filepath.Join(real, e.Name()), IsDir: e.IsDir() })
+		out = append(out, FileEntry{Name: e.Name(), Path: filepath.Join(real, e.Name()), IsDir: e.IsDir()})
 	}
 	return out, nil
 }
 
 func (s *Store) WriteFile(p string, b []byte) error {
 	real, err := s.fs.Resolve(p)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return os.WriteFile(real, b, 0o644)
 }
 
 func (s *Store) DeletePath(p string) error {
 	real, err := s.fs.Resolve(p)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	if real == s.fs.Root() {
 		return fmt.Errorf("refusing to delete the file-manager root")
 	}
@@ -218,29 +253,43 @@ func (s *Store) DeletePath(p string) error {
 
 func (s *Store) Mkdir(p string) error {
 	real, err := s.fs.Resolve(p)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return os.MkdirAll(real, 0o755)
 }
 
 func (s *Store) Move(src, dst string) error {
 	realSrc, err := s.fs.Resolve(src)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	realDst, err := s.fs.Resolve(dst)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return os.Rename(realSrc, realDst)
 }
 
 func (s *Store) Copy(src, dst string) error {
 	realSrc, err := s.fs.Resolve(src)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	realDst, err := s.fs.Resolve(dst)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	info, err := os.Stat(realSrc)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	if info.IsDir() {
 		return fmt.Errorf("copying directories is not yet supported")
 	}
 	b, err := os.ReadFile(realSrc)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	return os.WriteFile(realDst, b, info.Mode())
 }

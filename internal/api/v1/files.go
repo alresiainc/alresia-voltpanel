@@ -57,7 +57,9 @@ func deleteFile(d Deps) gin.HandlerFunc {
 
 func mkdirFile(d Deps) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var req struct{ Path string `json:"path"` }
+		var req struct {
+			Path string `json:"path"`
+		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return

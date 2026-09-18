@@ -16,9 +16,9 @@ import (
 // HealthCheck should be set -- Kind() reports which.
 type Step struct {
 	Name        string           `yaml:"name"`
-	Run         string           `yaml:"run,omitempty"`         // local shell command (os/exec on the daemon's own host)
-	SSH         *SSHStep         `yaml:"ssh,omitempty"`         // remote command via a Server (RemoteProvider.Exec)
-	Deploy      string           `yaml:"deploy,omitempty"`      // a DeploymentTarget id -- reuses internal/domain/deployment.Engine wholesale
+	Run         string           `yaml:"run,omitempty"`    // local shell command (os/exec on the daemon's own host)
+	SSH         *SSHStep         `yaml:"ssh,omitempty"`    // remote command via a Server (RemoteProvider.Exec)
+	Deploy      string           `yaml:"deploy,omitempty"` // a DeploymentTarget id -- reuses internal/domain/deployment.Engine wholesale
 	HealthCheck *HealthCheckStep `yaml:"healthcheck,omitempty"`
 }
 

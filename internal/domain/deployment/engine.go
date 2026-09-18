@@ -25,14 +25,14 @@ type SecretResolver func(secretRef string) ([]byte, error)
 // Every step's output is captured into one log file per deployment, with
 // any injected git credential redacted before it's ever written.
 type Engine struct {
-	Remote      providers.RemoteProvider
-	Servers     *server.Repository
-	Targets     *TargetRepository
-	Deployments *Repository
-	Integrations *integration.Repository
+	Remote        providers.RemoteProvider
+	Servers       *server.Repository
+	Targets       *TargetRepository
+	Deployments   *Repository
+	Integrations  *integration.Repository
 	ResolveSecret SecretResolver
-	LogDir      string // <cfgDir>/logs/deployments
-	HTTPClient  *http.Client
+	LogDir        string // <cfgDir>/logs/deployments
+	HTTPClient    *http.Client
 }
 
 func (e *Engine) httpClient() *http.Client {

@@ -75,7 +75,9 @@ func TestListAndGetProject(t *testing.T) {
 	if created.Code != http.StatusCreated {
 		t.Fatalf("setup: expected 201, got %d", created.Code)
 	}
-	var cp struct{ ID string `json:"id"` }
+	var cp struct {
+		ID string `json:"id"`
+	}
 	if err := json.Unmarshal(created.Body.Bytes(), &cp); err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +117,9 @@ func TestDeleteProjectRequiresConfirm(t *testing.T) {
 	g, _ := newTestRouter(t, "secret-token")
 	dir := t.TempDir()
 	created := createProjectRequest(t, g, "secret-token", "to-delete", dir)
-	var cp struct{ ID string `json:"id"` }
+	var cp struct {
+		ID string `json:"id"`
+	}
 	if err := json.Unmarshal(created.Body.Bytes(), &cp); err != nil {
 		t.Fatal(err)
 	}

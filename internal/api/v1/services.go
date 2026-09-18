@@ -70,9 +70,16 @@ func startService(d Deps) gin.HandlerFunc {
 // stop): a SIGTERM-equivalent, then a timeout before force-kill, using the
 // service's configured graceful timeout (falling back to a package
 // default). Pass ?graceful=false to hard-kill immediately instead.
+// Requires confirm=true (§9.6) -- stopping is cheap to undo (just start it
+// again), but the plan's checklist names it explicitly alongside delete/
+// uninstall/rollback, and the check costs nothing.
 func stopService(d Deps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if c.Query("confirm") != "true" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "stop requires confirm=true"})
+			return
+		}
 		graceful := c.Query("graceful") != "false"
 		err := d.Mgr.Stop(id, graceful, 0)
 		audit(d.DB(), "service.stop", "service", id, resultOf(err))

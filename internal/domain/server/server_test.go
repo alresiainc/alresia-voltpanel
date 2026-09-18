@@ -67,11 +67,11 @@ func TestRepository_Create_Validation(t *testing.T) {
 	repo := newTestRepo(t)
 
 	cases := []CreateRequest{
-		{Hostname: "h", Username: "u"},                                        // missing name
-		{Name: "n", Username: "u"},                                            // missing hostname
-		{Name: "n", Hostname: "h"},                                            // missing username
-		{Name: "n", Hostname: "h", Username: "u", AuthMethod: "password"},     // unsupported auth method
-		{Name: "n", Hostname: "h", Username: "u", AuthMethod: "key"},          // key auth with no secret_ref
+		{Hostname: "h", Username: "u"},                                    // missing name
+		{Name: "n", Username: "u"},                                        // missing hostname
+		{Name: "n", Hostname: "h"},                                        // missing username
+		{Name: "n", Hostname: "h", Username: "u", AuthMethod: "password"}, // unsupported auth method
+		{Name: "n", Hostname: "h", Username: "u", AuthMethod: "key"},      // key auth with no secret_ref
 	}
 	for i, req := range cases {
 		if _, err := repo.Create(req); err == nil {
@@ -125,7 +125,7 @@ func (f *fakeSession) Exec(ctx context.Context, command string) (stdout, stderr 
 func (f *fakeSession) ListDir(ctx context.Context, path string) ([]providers.RemoteFileInfo, error) {
 	return nil, nil
 }
-func (f *fakeSession) ReadFile(ctx context.Context, path string) ([]byte, error)  { return nil, nil }
+func (f *fakeSession) ReadFile(ctx context.Context, path string) ([]byte, error)     { return nil, nil }
 func (f *fakeSession) WriteFile(ctx context.Context, path string, data []byte) error { return nil }
 func (f *fakeSession) Metrics(ctx context.Context) (providers.RemoteMetrics, error) {
 	return providers.RemoteMetrics{}, nil

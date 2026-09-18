@@ -13,19 +13,19 @@ import (
 // package never sets it true -- rolling back code here never implies a
 // migration was undone (§13/§18).
 type Deployment struct {
-	ID                          string  `json:"id"`
-	ProjectID                   string  `json:"projectId"`
-	ServerID                    string  `json:"serverId"`
-	CommitSHA                   string  `json:"commitSha,omitempty"`
-	Branch                      string  `json:"branch,omitempty"`
-	Status                      string  `json:"status"`
-	StartedAt                   string  `json:"startedAt,omitempty"`
-	FinishedAt                  string  `json:"finishedAt,omitempty"`
-	DurationMS                  int64   `json:"durationMs,omitempty"`
-	LogRef                      string  `json:"logRef,omitempty"`
-	CodeRollbackRef             string  `json:"codeRollbackRef,omitempty"`
-	ArtifactRollbackRef         string  `json:"artifactRollbackRef,omitempty"`
-	MigrationRollbackSupported bool    `json:"migrationRollbackSupported"`
+	ID                         string `json:"id"`
+	ProjectID                  string `json:"projectId"`
+	ServerID                   string `json:"serverId"`
+	CommitSHA                  string `json:"commitSha,omitempty"`
+	Branch                     string `json:"branch,omitempty"`
+	Status                     string `json:"status"`
+	StartedAt                  string `json:"startedAt,omitempty"`
+	FinishedAt                 string `json:"finishedAt,omitempty"`
+	DurationMS                 int64  `json:"durationMs,omitempty"`
+	LogRef                     string `json:"logRef,omitempty"`
+	CodeRollbackRef            string `json:"codeRollbackRef,omitempty"`
+	ArtifactRollbackRef        string `json:"artifactRollbackRef,omitempty"`
+	MigrationRollbackSupported bool   `json:"migrationRollbackSupported"`
 }
 
 type Repository struct {

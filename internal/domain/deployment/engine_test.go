@@ -41,11 +41,15 @@ func (f *fakeSession) Exec(ctx context.Context, command string) ([]byte, []byte,
 	}
 	return nil, nil, nil
 }
-func (f *fakeSession) ListDir(ctx context.Context, path string) ([]providers.RemoteFileInfo, error) { return nil, nil }
-func (f *fakeSession) ReadFile(ctx context.Context, path string) ([]byte, error)                    { return nil, nil }
-func (f *fakeSession) WriteFile(ctx context.Context, path string, data []byte) error                { return nil }
-func (f *fakeSession) Metrics(ctx context.Context) (providers.RemoteMetrics, error)                 { return providers.RemoteMetrics{}, nil }
-func (f *fakeSession) Close() error                                                                  { return nil }
+func (f *fakeSession) ListDir(ctx context.Context, path string) ([]providers.RemoteFileInfo, error) {
+	return nil, nil
+}
+func (f *fakeSession) ReadFile(ctx context.Context, path string) ([]byte, error)     { return nil, nil }
+func (f *fakeSession) WriteFile(ctx context.Context, path string, data []byte) error { return nil }
+func (f *fakeSession) Metrics(ctx context.Context) (providers.RemoteMetrics, error) {
+	return providers.RemoteMetrics{}, nil
+}
+func (f *fakeSession) Close() error { return nil }
 
 var errCommandFailed = &commandError{}
 
@@ -85,13 +89,13 @@ func newTestEngine(t *testing.T, sess *fakeSession) (*Engine, string, string) {
 	}
 
 	e := &Engine{
-		Remote:      &fakeRemote{session: sess},
-		Servers:     servers,
-		Targets:     targets,
-		Deployments: NewRepository(db),
-		Integrations: integration.NewRepository(db),
+		Remote:        &fakeRemote{session: sess},
+		Servers:       servers,
+		Targets:       targets,
+		Deployments:   NewRepository(db),
+		Integrations:  integration.NewRepository(db),
 		ResolveSecret: func(ref string) ([]byte, error) { return []byte("fake-token"), nil },
-		LogDir:      t.TempDir(),
+		LogDir:        t.TempDir(),
 	}
 	return e, target.ID, srv.ID
 }

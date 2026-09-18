@@ -1,8 +1,10 @@
 # Volt — Architecture & Implementation Plan
 
-> Status: Phases 0–11 implemented, merged to `main`, and verified as of 2026-09-18
+> Status: **All 12 phases implemented, merged to `main`, and verified as of 2026-09-18**
 > (overnight autonomous run). See the progress log entries below, in order, for what
-> shipped in each phase and what's explicitly deferred. First implementation slice =
+> shipped in each phase, what was explicitly deferred (nothing, by the end -- see the
+> Phase 12 entry), and what remains genuinely open for a human to pick up next (see
+> "What's next" at the end of the Phase 12 entry). First implementation slice =
 > Phase 0 (see §21).
 > Source review performed by direct inspection of the repository on 2026-09-17.
 >
@@ -187,23 +189,86 @@ green after each merge, `GOOS=linux`/`windows` cross-compile clean, UI `tsc` cle
 
 Not done / deferred: nothing from these four phases' stated scope.
 
-## Phase 9/10/12 status
+## Phase 9 progress log (2026-09-18, solo -- no subagent, to avoid the rate limit again)
 
-**Not implemented.** Phase 9 (Deployment) and Phase 10 (CI/CD Pipelines) both depend on
-Phase 7 + Phase 8 (✓ as of this run) but represent substantial additional net-new surface
-(a deployment engine with the three-way rollback split from §18, a YAML pipeline engine)
-that this overnight run did not reach. Phase 12 (Hardening/Release) depends on all prior
-phases and is explicitly the "touches everything, adds nothing new" closing pass --
-also not started. Whoever picks this up next: Phases 0–8 and 11 are real, tested,
-merged, working code today; 9/10/12 are the honest remainder.
+`internal/domain/deployment`: a DeploymentTarget config per project (repo, server,
+branch, deploy path, install/restart commands, optional health-check URL), a manual
+Deploy action over SSH (checkout, install, restart, health-check, one log file per
+deployment, a failed deploy still recorded not discarded), and the §18 three-way
+rollback split (`migrationRollbackSupported` is never set true by this code -- rolling
+back code never implies a migration was undone). A git PAT injected from an Integration
+via the Secret abstraction is redacted before ever touching a log line; every value
+interpolated into a remote shell command is shell-quoted against injection.
+`internal/api/v1/deployments.go` wires it up; `ui/src/pages/Deployments.tsx` is the UI.
+Verified end-to-end against the real built binary (real project/server/target, a real
+deploy attempt against an intentionally unreachable host, confirmed the failure was
+recorded correctly). Migration required: `0004_deployment_targets.sql` (the
+`deployments` table itself already existed from 0001_init.sql).
 
-Also explicitly out of scope for this run, by design, not by omission: nothing here ever
-wrote to a real `/etc/hosts`, invoked a real OS trust-store change, registered a real
-persistent OS service on this machine, connected to a real external SSH host, or made a
-real call to api.github.com -- see each phase's log entry above for how that was verified,
-not just asserted. A human needs to explicitly trigger those specific actions (adding a
-domain for real, trusting the CA for real, adding a real server, connecting a real GitHub
-account) the first time, from the UI, on a machine where that's actually wanted.
+## Phase 10 progress log (2026-09-18, solo)
+
+`internal/pipeline`: a linear YAML step runner (§20: no conditionals/matrices/templates)
+with four step kinds -- `run` (local shell), `ssh` (remote via a Server), `deploy`
+(delegates wholesale to Phase 9's Engine -- doesn't reinvent checkout/health-check),
+`healthcheck`. `internal/domain/pipeline` persists definitions and run history, plus a
+distinct webhook secret per pipeline (shown once, on creation, never again).
+`internal/api/v1/pipelines.go` adds a webhook endpoint verified by HMAC-SHA256
+(`X-Volt-Signature`, GitHub's own scheme) *outside* the normal session/token auth group
+-- an external git host can't present either, and a pipeline's `run` step means an
+unverified webhook would be remote code execution, so the signature check is mandatory
+and constant-time. Verified end-to-end against the real built binary: a real pipeline,
+run manually, then triggered via a correctly-HMAC-signed webhook POST (ran) and a forged
+one (rejected with 401) -- the plan's own acceptance criterion ("a push... triggers a
+pipeline") demonstrated for real, modulo actual internet exposure of this localhost-only
+daemon, which is an intentional, unrelated constraint (§9.1), not a gap in this phase.
+Migration required: `0005_pipeline_webhook.sql`.
+
+## Phase 12 progress log (2026-09-18, solo) -- closing pass
+
+- **Security review against §9's checklist**, point by point against the actual code
+  (not just re-reading intentions): binding, authn/session, WS auth, CSRF/origin, path
+  sandbox, secrets, audit log, SSH-agent preference, and privilege scoping all checked
+  out. Found one real gap doing this: §9.6 names stop/rollback alongside delete/uninstall/
+  CA-trust as needing `confirm=true`, but `stopService`/`rollbackDeployment` didn't have
+  it -- fixed both (server + a UI client-call update), and fixed a test
+  (`TestRollbackSurfacesNoMigrationSupport`) that would otherwise have started passing
+  for the wrong reason (the missing-confirm 400 masking the check it was actually meant
+  to exercise) rather than silently rotting.
+- Confirmed every mutating handler across the whole API calls `audit()` (checked
+  programmatically, not by eye) -- full §9.8 coverage, no gaps.
+- Confirmed the daemon binds `127.0.0.1` only with no override flag, and that
+  `TrustCA` (SSL) is the *only* place anywhere in the codebase that constructs a
+  privileged/sudo-adjacent command -- grepped for `sudo`/`osascript`/`runas`/
+  `administrator` across every package to check this, not assumed it.
+- **`gofmt -l .` found 17 misformatted files** (accumulated across the whole overnight
+  run, mostly minor -- multi-line struct literals, wrapped one-liners) -- ran `gofmt -w .`
+  across the tree; re-ran the full build/vet/test suite after to confirm the mechanical
+  reformat changed nothing behaviorally.
+- **Docs sweep**: rewrote `docs/api.md` (every endpoint added since the version that only
+  covered Phase 0/1) and `docs/architecture.md` (every subsystem: providers, security,
+  deployment/pipeline engines) to match what's actually true now rather than the
+  Phase 0/1 snapshot; fixed a stale note in `docs/install-testing.md` claiming service
+  registration was still a no-op (Phase 5 already implemented real, tested
+  file-generation for it) and expanded the QA checklist to exercise Deployments/
+  Pipelines, not just the original Phase 0/1 surface.
+- Full `go build`/`vet`/`test ./...` green across every package, `GOOS=linux`/`windows`
+  cross-compile clean, UI `tsc --noEmit` clean, and one more full `make build` +
+  live-binary smoke test confirming the newly-added `confirm=true` requirements actually
+  work end-to-end (stop without confirm → 400, with confirm → 200).
+
+**What's next, for a human**: everything above is real, tested, working code today --
+not a stub, not a partial implementation waved at as "done." What's genuinely still open:
+(1) the deprecated flat-API-alias removal mentioned in the original Phase 12 scope doesn't
+apply -- Phase 1 did an aggressive cutover to `/api/v1/*` with no alias period, since
+nothing had shipped the old routes to real users yet; (2) a real cross-platform test
+matrix (this all ran on one macOS box -- Linux/Windows are cross-compile-verified only,
+never executed); (3) narrowing the file-manager sandbox from the home directory to a
+per-project root, now that Project exists (noted as a real gap in `docs/architecture.md`);
+(4) the WiX MSI path is still not wired into the GoReleaser pipeline; (5) the `.hide` file
+with an apparent live GitHub token sitting in the working tree, flagged all the way back
+in the original review and never touched since -- still needs a human to check whether
+it's real and rotate/remove it if so, since it's a credential and not this agent's to
+touch or judge.
 
 ## Environment notes from the review
 

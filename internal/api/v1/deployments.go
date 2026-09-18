@@ -146,6 +146,10 @@ func deploymentLog(d Deps) gin.HandlerFunc {
 func rollbackDeployment(d Deps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
+		if c.Query("confirm") != "true" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "rollback requires confirm=true"})
+			return
+		}
 		result, err := d.DeployEngine.Rollback(c.Request.Context(), id)
 		audit(d.DB(), "deployment.rollback", "deployment", id, resultOf(err))
 		if err != nil {

@@ -23,18 +23,18 @@ var ErrNotFound = errors.New("deployment: not found")
 // project is a real future need, not required by this phase's acceptance
 // criterion).
 type Target struct {
-	ID              string    `json:"id"`
-	ProjectID       string    `json:"projectId"`
-	ServerID        string    `json:"serverId"`
-	RepoURL         string    `json:"repoUrl"`
-	IntegrationID   string    `json:"integrationId,omitempty"`
-	Branch          string    `json:"branch"`
-	DeployPath      string    `json:"deployPath"`
-	InstallCommand  string    `json:"installCommand,omitempty"`
-	RestartCommand  string    `json:"restartCommand,omitempty"`
-	HealthCheckURL  string    `json:"healthCheckUrl,omitempty"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
+	ID             string    `json:"id"`
+	ProjectID      string    `json:"projectId"`
+	ServerID       string    `json:"serverId"`
+	RepoURL        string    `json:"repoUrl"`
+	IntegrationID  string    `json:"integrationId,omitempty"`
+	Branch         string    `json:"branch"`
+	DeployPath     string    `json:"deployPath"`
+	InstallCommand string    `json:"installCommand,omitempty"`
+	RestartCommand string    `json:"restartCommand,omitempty"`
+	HealthCheckURL string    `json:"healthCheckUrl,omitempty"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 type TargetRepository struct {

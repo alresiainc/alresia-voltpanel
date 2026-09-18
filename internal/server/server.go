@@ -32,14 +32,14 @@ import (
 )
 
 type Options struct {
-	Port       int
-	Bind       string
-	Dev        bool
-	Token      string
+	Port  int
+	Bind  string
+	Dev   bool
+	Token string
 	// SessionSecret signs session cookies (see internal/security.SessionAuth).
 	SessionSecret string
-	EmbeddedFS embed.FS
-	CfgDir     string
+	EmbeddedFS    embed.FS
+	CfgDir        string
 }
 
 type Server struct {

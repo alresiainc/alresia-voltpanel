@@ -300,7 +300,7 @@ export const api = {
   listServices: () => request<Service[]>('/services'),
   startService: (id: string, body: { name: string; command: string; args?: string[]; cwd?: string; env?: Record<string, string> }) =>
     request(`/services/${encodeURIComponent(id)}/start`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-  stopService: (id: string) => request(`/services/${encodeURIComponent(id)}/stop`, { method: 'POST' }),
+  stopService: (id: string) => request(`/services/${encodeURIComponent(id)}/stop?confirm=true`, { method: 'POST' }),
   restartService: (id: string) => request(`/services/${encodeURIComponent(id)}/restart`, { method: 'POST' }),
   serviceLogs: (id: string, tail = true) => request<string>(`/services/${encodeURIComponent(id)}/logs?tail=${tail}`),
 
@@ -388,7 +388,7 @@ export const api = {
   listDeployments: (projectId: string) => request<Deployment[]>(`/deployments?projectId=${encodeURIComponent(projectId)}`),
   deploy: (targetId: string) => request<Deployment>('/deployments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId }) }),
   deploymentLog: (id: string) => request<string>(`/deployments/${encodeURIComponent(id)}/log`),
-  rollbackDeployment: (id: string) => request<Deployment>(`/deployments/${encodeURIComponent(id)}/rollback`, { method: 'POST' }),
+  rollbackDeployment: (id: string) => request<Deployment>(`/deployments/${encodeURIComponent(id)}/rollback?confirm=true`, { method: 'POST' }),
 
   listPipelines: (projectId: string) => request<Pipeline[]>(`/pipelines?projectId=${encodeURIComponent(projectId)}`),
   createPipeline: (projectId: string, name: string, definitionYaml: string) =>

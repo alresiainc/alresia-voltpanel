@@ -33,12 +33,12 @@ func CollectProcess(pid int) (ProcessMetrics, error) {
 }
 
 type Metrics struct {
-	CPUPercent float64 `json:"cpuPercent"`
-	MemUsed uint64 `json:"memUsed"`
-	MemTotal uint64 `json:"memTotal"`
-	DiskUsed uint64 `json:"diskUsed"`
-	DiskTotal uint64 `json:"diskTotal"`
-	OpenLocalPorts []int `json:"openLocalPorts"`
+	CPUPercent     float64 `json:"cpuPercent"`
+	MemUsed        uint64  `json:"memUsed"`
+	MemTotal       uint64  `json:"memTotal"`
+	DiskUsed       uint64  `json:"diskUsed"`
+	DiskTotal      uint64  `json:"diskTotal"`
+	OpenLocalPorts []int   `json:"openLocalPorts"`
 }
 
 func Collect() (Metrics, error) {
@@ -47,7 +47,9 @@ func Collect() (Metrics, error) {
 	d, _ := disk.Usage("/")
 	ports := scanLocalPorts()
 	var cpuPct float64
-	if len(c) > 0 { cpuPct = c[0] }
+	if len(c) > 0 {
+		cpuPct = c[0]
+	}
 	return Metrics{CPUPercent: cpuPct, MemUsed: m.Used, MemTotal: m.Total, DiskUsed: d.Used, DiskTotal: d.Total, OpenLocalPorts: ports}, nil
 }
 
@@ -56,7 +58,10 @@ func scanLocalPorts() []int {
 	common := []int{80, 443, 3000, 5173, 5432, 6379, 3306, 7788}
 	for _, p := range common {
 		c, err := net.Dial("tcp", "127.0.0.1:"+fmt.Sprintf("%d", p))
-		if err == nil { _ = c.Close(); out = append(out, p) }
+		if err == nil {
+			_ = c.Close()
+			out = append(out, p)
+		}
 	}
 	return out
 }

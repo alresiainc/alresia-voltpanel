@@ -20,11 +20,15 @@ type pipeFakeSession struct{ out string }
 func (f *pipeFakeSession) Exec(ctx context.Context, command string) ([]byte, []byte, error) {
 	return []byte(f.out), nil, nil
 }
-func (f *pipeFakeSession) ListDir(ctx context.Context, path string) ([]providers.RemoteFileInfo, error) { return nil, nil }
-func (f *pipeFakeSession) ReadFile(ctx context.Context, path string) ([]byte, error)                    { return nil, nil }
-func (f *pipeFakeSession) WriteFile(ctx context.Context, path string, data []byte) error                { return nil }
-func (f *pipeFakeSession) Metrics(ctx context.Context) (providers.RemoteMetrics, error)                  { return providers.RemoteMetrics{}, nil }
-func (f *pipeFakeSession) Close() error                                                                    { return nil }
+func (f *pipeFakeSession) ListDir(ctx context.Context, path string) ([]providers.RemoteFileInfo, error) {
+	return nil, nil
+}
+func (f *pipeFakeSession) ReadFile(ctx context.Context, path string) ([]byte, error)     { return nil, nil }
+func (f *pipeFakeSession) WriteFile(ctx context.Context, path string, data []byte) error { return nil }
+func (f *pipeFakeSession) Metrics(ctx context.Context) (providers.RemoteMetrics, error) {
+	return providers.RemoteMetrics{}, nil
+}
+func (f *pipeFakeSession) Close() error { return nil }
 
 type pipeFakeRemote struct{ session *pipeFakeSession }
 

@@ -12,12 +12,12 @@ import (
 )
 
 type Hub struct {
-	clients map[*websocket.Conn]bool
+	clients   map[*websocket.Conn]bool
 	broadcast chan []byte
-	mu sync.Mutex
-	token string
-	dev bool
-	session *security.SessionAuth
+	mu        sync.Mutex
+	token     string
+	dev       bool
+	session   *security.SessionAuth
 }
 
 // NewHub creates a Hub. token is the shared secret clients must present in
@@ -58,7 +58,9 @@ type authMessage struct {
 // than via a request header.
 func ServeWs(h *Hub, w http.ResponseWriter, r *http.Request) {
 	c, err := upgrader.Upgrade(w, r, nil)
-	if err != nil { return }
+	if err != nil {
+		return
+	}
 
 	if !h.authenticateRequest(r) && !h.authenticate(c) {
 		_ = c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "unauthorized"))
@@ -70,7 +72,10 @@ func ServeWs(h *Hub, w http.ResponseWriter, r *http.Request) {
 	h.clients[c] = true
 	h.mu.Unlock()
 	c.SetCloseHandler(func(code int, text string) error {
-		h.mu.Lock(); delete(h.clients, c); h.mu.Unlock(); return nil
+		h.mu.Lock()
+		delete(h.clients, c)
+		h.mu.Unlock()
+		return nil
 	})
 
 	// gorilla/websocket requires an active reader for control frames (pings,
@@ -120,4 +125,9 @@ func (h *Hub) authenticate(c *websocket.Conn) bool {
 	return subtle.ConstantTimeCompare([]byte(auth.Token), []byte(h.token)) == 1
 }
 
-func (h *Hub) Emit(b []byte) { select { case h.broadcast <- b: default: } }
+func (h *Hub) Emit(b []byte) {
+	select {
+	case h.broadcast <- b:
+	default:
+	}
+}

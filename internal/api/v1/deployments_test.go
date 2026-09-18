@@ -32,11 +32,19 @@ func (f *deployFakeSession) Exec(ctx context.Context, command string) ([]byte, [
 	}
 	return []byte("abc123\n"), nil, nil
 }
-func (f *deployFakeSession) ListDir(ctx context.Context, path string) ([]providers.RemoteFileInfo, error) { return nil, nil }
-func (f *deployFakeSession) ReadFile(ctx context.Context, path string) ([]byte, error)                    { return nil, nil }
-func (f *deployFakeSession) WriteFile(ctx context.Context, path string, data []byte) error                { return nil }
-func (f *deployFakeSession) Metrics(ctx context.Context) (providers.RemoteMetrics, error)                 { return providers.RemoteMetrics{}, nil }
-func (f *deployFakeSession) Close() error                                                                   { return nil }
+func (f *deployFakeSession) ListDir(ctx context.Context, path string) ([]providers.RemoteFileInfo, error) {
+	return nil, nil
+}
+func (f *deployFakeSession) ReadFile(ctx context.Context, path string) ([]byte, error) {
+	return nil, nil
+}
+func (f *deployFakeSession) WriteFile(ctx context.Context, path string, data []byte) error {
+	return nil
+}
+func (f *deployFakeSession) Metrics(ctx context.Context) (providers.RemoteMetrics, error) {
+	return providers.RemoteMetrics{}, nil
+}
+func (f *deployFakeSession) Close() error { return nil }
 
 var errDeployFake = &deployFakeErr{}
 
@@ -167,8 +175,13 @@ func TestRollbackSurfacesNoMigrationSupport(t *testing.T) {
 	}
 	id := dep["id"].(string)
 
-	rec := jsonRequest(g, http.MethodPost, "/api/v1/deployments/"+id+"/rollback", "secret-token", "")
+	noConfirmRec := jsonRequest(g, http.MethodPost, "/api/v1/deployments/"+id+"/rollback", "secret-token", "")
+	if noConfirmRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected rollback without confirm=true to be rejected, got %d", noConfirmRec.Code)
+	}
+
+	rec := jsonRequest(g, http.MethodPost, "/api/v1/deployments/"+id+"/rollback?confirm=true", "secret-token", "")
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected rollback with no rollback ref to be rejected, got %d: %s", rec.Code, rec.Body.String())
+		t.Fatalf("expected a confirmed rollback with no rollback ref to still be rejected, got %d: %s", rec.Code, rec.Body.String())
 	}
 }

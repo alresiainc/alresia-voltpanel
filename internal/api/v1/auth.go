@@ -15,7 +15,9 @@ const sessionTTL = 24 * time.Hour
 // -reachable localStorage) the raw token for every request.
 func verifyToken(d Deps) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var req struct{ Token string `json:"token"` }
+		var req struct {
+			Token string `json:"token"`
+		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
