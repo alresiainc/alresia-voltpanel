@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/alresiainc/alresia-voltpanel/internal/agent"
+	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
 	"github.com/alresiainc/alresia-voltpanel/internal/security"
 	"github.com/alresiainc/alresia-voltpanel/internal/storage"
@@ -66,7 +66,7 @@ func newRuntimesTestRouter(t *testing.T, providersList ...providers.RuntimeProvi
 	for _, p := range providersList {
 		registry.RegisterRuntime(p)
 	}
-	d := Deps{Store: st, Mgr: agent.NewManager(st), Hub: hub, Session: session, Token: token, Dev: false, Providers: registry}
+	d := Deps{Store: st, Mgr: service.NewManager(st, hub), Hub: hub, Session: session, Token: token, Dev: false, Providers: registry}
 	g := gin.New()
 	Mount(g, d)
 	return g, d

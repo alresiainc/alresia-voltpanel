@@ -60,12 +60,20 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 	}
 	defer db2.Close()
 
-	var secondCount int
-	if err := db2.QueryRow(`SELECT COUNT(1) FROM schema_migrations`).Scan(&secondCount); err != nil {
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if secondCount != firstCount {
-		t.Fatalf("expected re-opening to leave the applied migration count unchanged: first=%d second=%d", firstCount, secondCount)
+
+	var count int
+	if err := db2.QueryRow(`SELECT COUNT(1) FROM schema_migrations`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != len(entries) {
+		t.Fatalf("expected exactly %d applied migrations (one per migration file), got %d", len(entries), count)
+	}
+	if count != firstCount {
+		t.Fatalf("expected re-opening to leave the applied migration count unchanged: first=%d second=%d", firstCount, count)
 	}
 }
 

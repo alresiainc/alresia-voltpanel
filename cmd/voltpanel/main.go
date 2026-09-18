@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"flag"
 	"fmt"
@@ -53,6 +54,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to init server: %v", err)
 	}
+
+	// Dependency-ordered autostart (§15): bring up every persisted
+	// autostart=true service, in topological order, before the daemon
+	// starts serving. Failures here are logged, not fatal -- a bad
+	// dependency graph or a single stuck service shouldn't prevent the
+	// control plane itself (and the UI to fix the problem) from coming up.
+	if err := srv.StartAutostartServices(context.Background()); err != nil {
+		log.Printf("volt: autostart failed: %v", err)
+	}
+
 	log.Printf("VoltPanel listening on http://127.0.0.1:%d", port)
 	if err := srv.Run(); err != nil {
 		log.Fatalf("server error: %v", err)

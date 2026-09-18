@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"embed"
 	"io"
 	"io/fs"
@@ -11,7 +12,7 @@ import (
 	"strings"
 
 	v1 "github.com/alresiainc/alresia-voltpanel/internal/api/v1"
-	"github.com/alresiainc/alresia-voltpanel/internal/agent"
+	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/docker"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/runtime/node"
@@ -36,6 +37,7 @@ type Options struct {
 type Server struct {
 	opt Options
 	r   *gin.Engine
+	mgr *service.Manager
 }
 
 // New wires the daemon's subsystems (storage, process manager, WS hub,
@@ -51,13 +53,14 @@ func New(opt Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	mgr := agent.NewManager(st)
 	session, err := security.NewSessionAuth(opt.SessionSecret)
 	if err != nil {
 		return nil, err
 	}
 	hub := ws.NewHub(opt.Token, opt.Dev, session)
 	go hub.Run()
+
+	mgr := service.NewManager(st, hub)
 
 	registry := providers.NewRegistry()
 	registry.RegisterRuntime(node.New())
@@ -79,7 +82,17 @@ func New(opt Options) (*Server, error) {
 
 	mountStaticUI(g, opt.EmbeddedFS)
 
-	return &Server{opt: opt, r: g}, nil
+	return &Server{opt: opt, r: g, mgr: mgr}, nil
+}
+
+// StartAutostartServices runs the Phase 5 dependency-ordered autostart pass
+// (§15) over every service persisted with autostart=true. Intended to be
+// called once by cmd/voltpanel/main.go after New() and before Run(), so the
+// daemon's own service registration (internal/platform/*) has nothing to do
+// with whether *managed* services autostart -- that's this, independent of
+// how the Volt daemon itself was launched.
+func (s *Server) StartAutostartServices(ctx context.Context) error {
+	return s.mgr.StartAutostart(ctx)
 }
 
 // mountStaticUI serves the embedded Vite build (cmd/voltpanel/dist) for

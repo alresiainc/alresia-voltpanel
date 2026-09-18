@@ -3,7 +3,7 @@ package v1
 import (
 	"net/http"
 
-	"github.com/alresiainc/alresia-voltpanel/internal/agent"
+	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
 	"github.com/alresiainc/alresia-voltpanel/internal/metrics"
 	"github.com/gin-gonic/gin"
 )
@@ -25,12 +25,16 @@ type serviceView struct {
 
 func listServices(d Deps) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		apps := d.Store.ListApps()
-		out := make([]serviceView, 0, len(apps))
-		for _, a := range apps {
-			v := serviceView{ID: a.ID, Name: a.Name, Command: a.Command, Args: a.Args, Cwd: a.Cwd, Env: a.Env, PID: a.PID, Status: a.Status, LogFile: a.LogFile}
-			if live, ok := d.Mgr.Get(a.ID); ok {
-				v.PID, v.Status = live.PID, live.Status
+		records, err := d.Store.ListServiceRecords()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		out := make([]serviceView, 0, len(records))
+		for _, r := range records {
+			v := serviceView{ID: r.ID, Name: r.Name, Command: r.Command, Args: r.Args, Cwd: r.Cwd, Env: r.Env, PID: r.PID, Status: r.Status, LogFile: r.LogFile}
+			if live, ok := d.Mgr.Get(r.ID); ok {
+				v.PID, v.Status = live.PID, string(live.Status)
 			}
 			out = append(out, v)
 		}
@@ -52,7 +56,7 @@ func startService(d Deps) gin.HandlerFunc {
 			return
 		}
 		id := c.Param("id")
-		proc, err := d.Mgr.Start(agent.StartRequest{ID: id, Name: body.Name, Command: body.Command, Args: body.Args, Cwd: body.Cwd, Env: body.Env}, d.Hub)
+		proc, err := d.Mgr.Start(service.StartRequest{ID: id, Name: body.Name, Command: body.Command, Args: body.Args, Cwd: body.Cwd, Env: body.Env})
 		audit(d.DB(), "service.start", "service", id, resultOf(err))
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -62,10 +66,15 @@ func startService(d Deps) gin.HandlerFunc {
 	}
 }
 
+// stopService stops a running service gracefully by default (§ graceful
+// stop): a SIGTERM-equivalent, then a timeout before force-kill, using the
+// service's configured graceful timeout (falling back to a package
+// default). Pass ?graceful=false to hard-kill immediately instead.
 func stopService(d Deps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
-		err := d.Mgr.Stop(id)
+		graceful := c.Query("graceful") != "false"
+		err := d.Mgr.Stop(id, graceful, 0)
 		audit(d.DB(), "service.stop", "service", id, resultOf(err))
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -78,7 +87,7 @@ func stopService(d Deps) gin.HandlerFunc {
 func restartService(d Deps) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
-		err := d.Mgr.Restart(id, d.Hub)
+		err := d.Mgr.Restart(id)
 		audit(d.DB(), "service.restart", "service", id, resultOf(err))
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
