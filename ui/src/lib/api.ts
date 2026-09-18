@@ -163,6 +163,16 @@ export interface CAInfo {
   trusted: boolean
 }
 
+export interface Extension {
+  id: string
+  name: string
+  version: string
+  kind: string
+  source: string
+  enabled: boolean
+  permissions: string[]
+}
+
 export const api = {
   verifyToken: (token: string) =>
     request<{ ok: boolean }>('/auth/token/verify', {
@@ -227,4 +237,11 @@ export const api = {
     request('/ssl/certificates', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ domainId }) }),
   trustCA: (confirmed: boolean) =>
     request('/ssl/ca/trust', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmed }) }),
+
+  listExtensions: () => request<Extension[]>('/extensions'),
+  installExtension: (path: string) =>
+    request<Extension>('/extensions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) }),
+  removeExtension: (id: string) => request(`/extensions/${encodeURIComponent(id)}?confirm=true`, { method: 'DELETE' }),
+  enableExtension: (id: string) => request<Extension>(`/extensions/${encodeURIComponent(id)}/enable`, { method: 'POST' }),
+  disableExtension: (id: string) => request<Extension>(`/extensions/${encodeURIComponent(id)}/disable`, { method: 'POST' }),
 }

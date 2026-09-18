@@ -71,4 +71,10 @@ func Mount(g *gin.Engine, d Deps) {
 	authed.POST("/ssl/ca/ensure", ensureCA(d))
 	authed.POST("/ssl/certificates", issueCertificate(d))
 	authed.POST("/ssl/ca/trust", trustCA(d))
+
+	authed.GET("/extensions", listExtensions(d))
+	authed.POST("/extensions", installExtension(d))
+	authed.DELETE("/extensions/:id", removeExtension(d))
+	authed.POST("/extensions/:id/enable", enableExtension(d))
+	authed.POST("/extensions/:id/disable", disableExtension(d))
 }

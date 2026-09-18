@@ -7,6 +7,7 @@ package v1
 import (
 	"database/sql"
 
+	"github.com/alresiainc/alresia-voltpanel/internal/domain/extension"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/docker"
@@ -42,6 +43,11 @@ type Deps struct {
 	// internal/api/v1/domains_test.go / ssl_test.go.
 	Domains providers.DomainProvider
 	SSL     providers.SSLProvider
+	// Extensions loads/enables/disables external providers (§17 Phase 11)
+	// and registers/unregisters them into Providers above -- from any
+	// handler's point of view, an enabled extension's subprocess is
+	// indistinguishable from a built-in provider.
+	Extensions *extension.Repository
 }
 
 func (d Deps) DB() *sql.DB { return d.Store.DB() }

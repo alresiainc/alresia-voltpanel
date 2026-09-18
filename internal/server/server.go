@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	v1 "github.com/alresiainc/alresia-voltpanel/internal/api/v1"
+	"github.com/alresiainc/alresia-voltpanel/internal/domain/extension"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/docker"
@@ -37,10 +38,11 @@ type Options struct {
 }
 
 type Server struct {
-	opt  Options
-	r    *gin.Engine
-	mgr  *service.Manager
-	http *http.Server
+	opt        Options
+	r          *gin.Engine
+	mgr        *service.Manager
+	http       *http.Server
+	extensions *extension.Repository
 }
 
 // New wires the daemon's subsystems (storage, process manager, WS hub,
@@ -81,14 +83,29 @@ func New(opt Options) (*Server, error) {
 	domainProvider := hosts.New()
 	sslProvider := localca.New(opt.CfgDir)
 
-	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Domains: domainProvider, SSL: sslProvider})
+	extensions := extension.NewRepository(st.DB(), registry)
+	// Re-registers every previously-enabled extension's subprocess into
+	// registry on startup -- an enabled extension survives a daemon
+	// restart, exactly like a built-in provider always being there.
+	extensions.LoadEnabled(context.Background())
+
+	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Domains: domainProvider, SSL: sslProvider, Extensions: extensions})
 
 	// Public, unversioned.
 	g.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
 
 	mountStaticUI(g, opt.EmbeddedFS)
 
-	return &Server{opt: opt, r: g, mgr: mgr}, nil
+	return &Server{opt: opt, r: g, mgr: mgr, extensions: extensions}, nil
+}
+
+// Close releases resources that outlive a single request but must stop
+// when the daemon does -- today, that's stopping every enabled
+// extension's subprocess (§17 Phase 11).
+func (s *Server) Close() {
+	if s.extensions != nil {
+		s.extensions.CloseAll()
+	}
 }
 
 // StartAutostartServices runs the Phase 5 dependency-ordered autostart pass

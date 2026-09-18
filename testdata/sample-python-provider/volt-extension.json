@@ -1,0 +1,8 @@
+{
+  "name": "python-demo",
+  "version": "0.1.0",
+  "kind": "runtime",
+  "executable": "python3",
+  "args": ["provider.py"],
+  "permissions": ["exec:python3"]
+}

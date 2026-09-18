@@ -92,6 +92,7 @@ func main() {
 		if err := srv.Shutdown(ctx); err != nil {
 			log.Printf("volt: shutdown error: %v", err)
 		}
+		srv.Close()
 	}()
 
 	log.Printf("VoltPanel listening on http://127.0.0.1:%d", port)
