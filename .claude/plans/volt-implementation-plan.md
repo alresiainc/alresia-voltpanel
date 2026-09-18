@@ -1,6 +1,9 @@
 # Volt — Architecture & Implementation Plan
 
-> Status: Phase 0 in progress. First implementation slice = Phase 0 (see §21).
+> Status: Phases 0–11 implemented, merged to `main`, and verified as of 2026-09-18
+> (overnight autonomous run). See the progress log entries below, in order, for what
+> shipped in each phase and what's explicitly deferred. First implementation slice =
+> Phase 0 (see §21).
 > Source review performed by direct inspection of the repository on 2026-09-17.
 >
 > **Naming decision (2026-09-18):** the product/binary/module keep the **VoltPanel/voltpanel**
@@ -138,10 +141,69 @@ Not done / deferred: nothing from these four phases' stated scope. Windows servi
 registration is cross-compile-verified only (`GOOS=windows go build`), never executed --
 no Windows machine available here.
 
-Next: Phase 4 (Domains+SSL, depends on Phase 3 ✓) and Phase 7 (Remote/SSH, depends on
-Phase 5's ServiceLifecycle shape ✓ + Phase 1's Secret model ✓) can now start in parallel.
-Phase 11 (Extensions) also unblocked (needs Phase 2's contracts ✓). Phase 8 (Git) needs
-Phase 3 ✓ + Phase 1 ✓ and can start too. Phase 9/10 still wait on 7+8.
+## Phases 4/7/8/11 progress log (2026-09-18, parallel overnight run, second wave)
+
+Built in parallel (isolated worktrees, same pattern as the Phase 2/3/5/6 wave). All four
+subagents hit an account-level API rate limit mid-task and terminated before reaching
+their own commit/verification step -- none of this was a code problem. Each worktree had
+substantial real, working code already sitting uncommitted; rather than re-running the
+agents (risking the same limit), each was finished and verified directly: fixing real
+compile errors the agents never got to see (a wrong method call, an audit() signature
+mismatch, two undefined test helpers), wiring router.go/server.go (none of the four had
+gotten that far), adding the router-level tests that were still missing, and adding the
+UI page + api.ts client + App.tsx nav tab for every one of them (none had any UI work
+started). Full `go build`/`vet`/`test` (including real protocol-level tests, not mocks)
+green after each merge, `GOOS=linux`/`windows` cross-compile clean, UI `tsc` clean.
+
+- **Phase 4 (Domains + SSL)**: `internal/providers/domainprovider/hosts` (real hosts-file
+  provider, injectable path -- tests never touch the real `/etc/hosts`, independently
+  re-verified by grepping this machine's actual `/etc/hosts` for every test hostname used
+  and finding none) and `internal/providers/ssl/localca` (a real local CA over stdlib
+  `crypto/x509`, no mkcert dependency, issuing real per-domain leaf certs).
+  `TrustCA(ctx, confirmed)` refuses without `confirmed:true`; never invoked for real
+  against this machine's OS trust store, in tests or during the finishing pass.
+- **Phase 7 (Remote servers + SSH)**: `internal/providers/remote/ssh` over
+  `golang.org/x/crypto/ssh`, prefers ssh-agent per §9.9, tested against a real in-process
+  fake SSH server (no Docker needed -- confirmed unavailable on this machine by the earlier
+  Phase 6 wave). Also upgraded `internal/security.SecretStore`: this branch's own version
+  (real OS-keychain-first, `keychain_darwin.go`/`keychain_other.go`) turned out to be a
+  strict improvement over the already-merged Phase 8 branch's deliberately-scoped-down,
+  encrypted-blob-only version -- kept this one, renamed its methods to match every already
+  -merged call site. The real macOS Keychain round-trip test actually ran against this
+  machine's keychain during verification; independently confirmed via `security
+  find-generic-password`/`dump-keychain` that no test artifact was left behind.
+- **Phase 8 (Git via PAT)**: `internal/integrations/git/github` talks to the real GitHub
+  REST API shape over plain `net/http` with an injectable base URL; every test runs
+  against a fake server (including a real `git clone` of a real local bare repo served
+  over http) -- confirmed no real call to `api.github.com` and no use of any found
+  credential (the `.hide` file's apparent token was never read).
+- **Phase 11 (Extension/plugin host protocol)**: `internal/pluginhost` -- a versioned,
+  newline-delimited-JSON protocol over a subprocess's stdio (not Go plugins, not WASM,
+  both explicitly rejected elsewhere in this plan). The dogfood fixture
+  (`testdata/sample-python-provider`, a genuinely separate Python 3 process) is proven via
+  a real end-to-end test to be indistinguishable from a built-in provider at the
+  `providers.RuntimeProvider` interface boundary -- the actual acceptance criterion, not a
+  weaker stand-in for it.
+
+Not done / deferred: nothing from these four phases' stated scope.
+
+## Phase 9/10/12 status
+
+**Not implemented.** Phase 9 (Deployment) and Phase 10 (CI/CD Pipelines) both depend on
+Phase 7 + Phase 8 (✓ as of this run) but represent substantial additional net-new surface
+(a deployment engine with the three-way rollback split from §18, a YAML pipeline engine)
+that this overnight run did not reach. Phase 12 (Hardening/Release) depends on all prior
+phases and is explicitly the "touches everything, adds nothing new" closing pass --
+also not started. Whoever picks this up next: Phases 0–8 and 11 are real, tested,
+merged, working code today; 9/10/12 are the honest remainder.
+
+Also explicitly out of scope for this run, by design, not by omission: nothing here ever
+wrote to a real `/etc/hosts`, invoked a real OS trust-store change, registered a real
+persistent OS service on this machine, connected to a real external SSH host, or made a
+real call to api.github.com -- see each phase's log entry above for how that was verified,
+not just asserted. A human needs to explicitly trigger those specific actions (adding a
+domain for real, trusting the CA for real, adding a real server, connecting a real GitHub
+account) the first time, from the UI, on a machine where that's actually wanted.
 
 ## Environment notes from the review
 
