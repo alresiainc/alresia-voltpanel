@@ -29,3 +29,4 @@ ui/.vite/
 *.swp
 
 .hide
+.claude/worktrees/
