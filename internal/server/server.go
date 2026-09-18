@@ -12,7 +12,10 @@ import (
 	"strings"
 
 	v1 "github.com/alresiainc/alresia-voltpanel/internal/api/v1"
+	"github.com/alresiainc/alresia-voltpanel/internal/domain/deployment"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/extension"
+	"github.com/alresiainc/alresia-voltpanel/internal/domain/integration"
+	"github.com/alresiainc/alresia-voltpanel/internal/domain/server"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/docker"
@@ -96,7 +99,17 @@ func New(opt Options) (*Server, error) {
 	}
 	sshProvider := &ssh.Provider{ResolveKey: secrets.Get}
 
-	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Domains: domainProvider, SSL: sslProvider, Extensions: extensions, Secrets: secrets, Remote: sshProvider})
+	deployEngine := &deployment.Engine{
+		Remote:        sshProvider,
+		Servers:       server.NewRepository(st.DB()),
+		Targets:       deployment.NewTargetRepository(st.DB()),
+		Deployments:   deployment.NewRepository(st.DB()),
+		Integrations:  integration.NewRepository(st.DB()),
+		ResolveSecret: secrets.Get,
+		LogDir:        filepath.Join(opt.CfgDir, "logs", "deployments"),
+	}
+
+	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Domains: domainProvider, SSL: sslProvider, Extensions: extensions, Secrets: secrets, Remote: sshProvider, DeployEngine: deployEngine})
 
 	// Public, unversioned.
 	g.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })

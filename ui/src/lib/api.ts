@@ -221,6 +221,37 @@ export interface RemoteFileInfo {
   modTime: string
 }
 
+export interface DeploymentTarget {
+  id: string
+  projectId: string
+  serverId: string
+  repoUrl: string
+  integrationId?: string
+  branch: string
+  deployPath: string
+  installCommand?: string
+  restartCommand?: string
+  healthCheckUrl?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Deployment {
+  id: string
+  projectId: string
+  serverId: string
+  commitSha?: string
+  branch?: string
+  status: string
+  startedAt?: string
+  finishedAt?: string
+  durationMs?: number
+  logRef?: string
+  codeRollbackRef?: string
+  artifactRollbackRef?: string
+  migrationRollbackSupported: boolean
+}
+
 export const api = {
   verifyToken: (token: string) =>
     request<{ ok: boolean }>('/auth/token/verify', {
@@ -317,4 +348,13 @@ export const api = {
   readServerFile: (id: string, path: string) => request<string>(`/servers/${encodeURIComponent(id)}/files/read?path=${encodeURIComponent(path)}`),
   writeServerFile: (id: string, path: string, content: string) =>
     request(`/servers/${encodeURIComponent(id)}/files`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path, content }) }),
+
+  listDeploymentTargets: (projectId: string) => request<DeploymentTarget[]>(`/deployment-targets?projectId=${encodeURIComponent(projectId)}`),
+  createDeploymentTarget: (body: Omit<DeploymentTarget, 'id' | 'createdAt' | 'updatedAt'>) =>
+    request<DeploymentTarget>('/deployment-targets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  deleteDeploymentTarget: (id: string) => request(`/deployment-targets/${encodeURIComponent(id)}?confirm=true`, { method: 'DELETE' }),
+  listDeployments: (projectId: string) => request<Deployment[]>(`/deployments?projectId=${encodeURIComponent(projectId)}`),
+  deploy: (targetId: string) => request<Deployment>('/deployments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetId }) }),
+  deploymentLog: (id: string) => request<string>(`/deployments/${encodeURIComponent(id)}/log`),
+  rollbackDeployment: (id: string) => request<Deployment>(`/deployments/${encodeURIComponent(id)}/rollback`, { method: 'POST' }),
 }

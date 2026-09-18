@@ -10,6 +10,7 @@ import Domains from './pages/Domains'
 import Extensions from './pages/Extensions'
 import Git from './pages/Git'
 import Servers from './pages/Servers'
+import Deployments from './pages/Deployments'
 import Settings from './pages/Settings'
 import { setToken as setApiToken, api } from './lib/api'
 import { wsClient } from './lib/ws'
@@ -32,7 +33,7 @@ function useToken() {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<'dash'|'runtimes'|'proc'|'projects'|'files'|'logs'|'docker'|'domains'|'extensions'|'git'|'servers'|'settings'>('dash')
+  const [tab, setTab] = useState<'dash'|'runtimes'|'proc'|'projects'|'files'|'logs'|'docker'|'domains'|'extensions'|'git'|'servers'|'deployments'|'settings'>('dash')
   const { token, setToken } = useToken()
 
   return (
@@ -49,6 +50,7 @@ export default function App() {
         <button onClick={() => setTab('extensions')}>Extensions</button>
         <button onClick={() => setTab('git')}>Git</button>
         <button onClick={() => setTab('servers')}>Servers</button>
+        <button onClick={() => setTab('deployments')}>Deployments</button>
         <button onClick={() => setTab('settings')}>Settings</button>
         <div className="ml-auto flex items-center gap-2">
           <input placeholder="Token" value={token} onChange={e=>setToken(e.target.value)} className="border px-2 py-1 text-sm" />
@@ -66,6 +68,7 @@ export default function App() {
         {tab==='extensions' && <Extensions />}
         {tab==='git' && <Git />}
         {tab==='servers' && <Servers />}
+        {tab==='deployments' && <Deployments />}
         {tab==='settings' && <Settings />}
       </main>
     </div>

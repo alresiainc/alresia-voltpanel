@@ -7,6 +7,7 @@ package v1
 import (
 	"database/sql"
 
+	"github.com/alresiainc/alresia-voltpanel/internal/domain/deployment"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/extension"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
@@ -62,6 +63,10 @@ type Deps struct {
 	// an httptest.NewServer fake so nothing in the test suite ever makes a
 	// real network call.
 	GitHubBaseURL string
+	// DeployEngine runs the Phase 9 deploy/rollback pipeline over Remote
+	// above. Never nil in production; tests build their own Engine value
+	// wired to a fake RemoteProvider.
+	DeployEngine *deployment.Engine
 }
 
 func (d Deps) DB() *sql.DB { return d.Store.DB() }

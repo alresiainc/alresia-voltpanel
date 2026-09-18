@@ -95,4 +95,13 @@ func Mount(g *gin.Engine, d Deps) {
 	authed.GET("/servers/:id/files", listServerFiles(d))
 	authed.GET("/servers/:id/files/read", readServerFile(d))
 	authed.PUT("/servers/:id/files", writeServerFile(d))
+
+	authed.GET("/deployment-targets", listDeploymentTargets(d))
+	authed.POST("/deployment-targets", createDeploymentTarget(d))
+	authed.DELETE("/deployment-targets/:id", deleteDeploymentTarget(d))
+
+	authed.GET("/deployments", listDeployments(d))
+	authed.POST("/deployments", deploy(d))
+	authed.GET("/deployments/:id/log", deploymentLog(d))
+	authed.POST("/deployments/:id/rollback", rollbackDeployment(d))
 }
