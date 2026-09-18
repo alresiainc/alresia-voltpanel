@@ -53,6 +53,21 @@ export interface FileEntry {
   isDir: boolean
 }
 
+export interface RuntimeVersion {
+  id: string
+  version: string
+  installPath: string
+  isDefault: boolean
+  status: string
+}
+
+export interface Runtime {
+  id: string
+  kind: string
+  name: string
+  versions: RuntimeVersion[]
+}
+
 export interface Metrics {
   cpuPercent: number
   memUsed: number
@@ -69,6 +84,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token }),
     }),
+
+  listRuntimes: () => request<Runtime[]>('/runtimes'),
+  detectRuntime: (kind: string) => request<Runtime>(`/runtimes/${encodeURIComponent(kind)}/detect`, { method: 'POST' }),
+  setDefaultRuntimeVersion: (kind: string, version: string) =>
+    request<Runtime>(`/runtimes/${encodeURIComponent(kind)}/versions/${encodeURIComponent(version)}/default`, { method: 'POST' }),
 
   listServices: () => request<Service[]>('/services'),
   startService: (id: string, body: { name: string; command: string; args?: string[]; cwd?: string; env?: Record<string, string> }) =>

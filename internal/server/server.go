@@ -11,6 +11,9 @@ import (
 
 	v1 "github.com/alresiainc/alresia-voltpanel/internal/api/v1"
 	"github.com/alresiainc/alresia-voltpanel/internal/agent"
+	"github.com/alresiainc/alresia-voltpanel/internal/providers"
+	"github.com/alresiainc/alresia-voltpanel/internal/providers/runtime/node"
+	"github.com/alresiainc/alresia-voltpanel/internal/providers/runtime/php"
 	"github.com/alresiainc/alresia-voltpanel/internal/security"
 	"github.com/alresiainc/alresia-voltpanel/internal/storage"
 	"github.com/alresiainc/alresia-voltpanel/internal/ws"
@@ -54,7 +57,11 @@ func New(opt Options) (*Server, error) {
 	hub := ws.NewHub(opt.Token, opt.Dev, session)
 	go hub.Run()
 
-	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev})
+	registry := providers.NewRegistry()
+	registry.RegisterRuntime(node.New())
+	registry.RegisterRuntime(php.New())
+
+	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry})
 
 	// Public, unversioned.
 	g.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
