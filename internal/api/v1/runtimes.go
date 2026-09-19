@@ -2,8 +2,10 @@ package v1
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	runtimedomain "github.com/alresiainc/alresia-voltpanel/internal/domain/runtime"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
@@ -177,5 +179,95 @@ func setDefaultRuntimeVersion(d Deps) gin.HandlerFunc {
 			}
 		}
 		c.JSON(http.StatusOK, gin.H{"ok": true})
+	}
+}
+
+// installRuntimeVersion downloads and installs a new version for a
+// registered RuntimeProvider (today: real nodejs.org binaries for
+// "node" -- see internal/providers/runtime/node). Progress streams over
+// the same WS "log" event every job/service log already uses, keyed by
+// "runtime:<kind>:<version>", since a real download+extract can take
+// more than an instant even though (unlike a Homebrew from-source build)
+// it's normally seconds, not minutes -- not worth the full async
+// internal/domain/job machinery, but still worth live feedback.
+func installRuntimeVersion(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		kind := c.Param("kind")
+		var body struct {
+			Version string `json:"version"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		if body.Version == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "version is required"})
+			return
+		}
+
+		p, ok := d.Providers.Runtime(kind)
+		if !ok {
+			c.JSON(http.StatusNotFound, gin.H{"error": "no runtime provider registered for kind " + kind})
+			return
+		}
+
+		progressID := "runtime:" + kind + ":" + body.Version
+		progress := func(percent int, message string) {
+			if d.Hub == nil {
+				return
+			}
+			payload, _ := json.Marshal(map[string]any{"type": "log", "id": progressID, "data": message + "\n", "ts": time.Now().UnixMilli()})
+			d.Hub.Emit(payload)
+		}
+
+		err := p.Install(c.Request.Context(), body.Version, progress)
+		audit(d.DB(), "runtime.install", "runtime", kind+"@"+body.Version, resultOf(err))
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+			return
+		}
+
+		repo := runtimedomain.NewRepository(d.DB())
+		rt, err := detectAndPersist(c.Request.Context(), repo, p)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, toRuntimeView(rt))
+	}
+}
+
+// removeRuntimeVersion uninstalls a version -- requires confirm=true
+// (§9.6), the same pattern every other destructive action in this API
+// follows.
+func removeRuntimeVersion(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		kind := c.Param("kind")
+		version := c.Param("version")
+		if c.Query("confirm") != "true" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "remove requires confirm=true"})
+			return
+		}
+
+		p, ok := d.Providers.Runtime(kind)
+		if !ok {
+			c.JSON(http.StatusNotFound, gin.H{"error": "no runtime provider registered for kind " + kind})
+			return
+		}
+
+		err := p.Remove(c.Request.Context(), version)
+		audit(d.DB(), "runtime.remove", "runtime", kind+"@"+version, resultOf(err))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		repo := runtimedomain.NewRepository(d.DB())
+		rt, err := detectAndPersist(c.Request.Context(), repo, p)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, toRuntimeView(rt))
 	}
 }

@@ -176,10 +176,10 @@ func TestSetDefaultPropagatesError(t *testing.T) {
 }
 
 // New (the real, non-mocked constructor) must still produce a usable
-// Provider wired to the real nvmInstaller -- this doesn't execute any
+// Provider wired to the real nativeInstaller -- this doesn't execute any
 // install/remove, just checks the wiring compiles and Kind() works.
 func TestNewReal(t *testing.T) {
-	p := New()
+	p := New(t.TempDir())
 	if p.Kind() != "node" {
 		t.Fatalf("expected kind 'node', got %q", p.Kind())
 	}

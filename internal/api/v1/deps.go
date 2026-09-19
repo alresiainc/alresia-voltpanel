@@ -13,6 +13,7 @@ import (
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
 	"github.com/alresiainc/alresia-voltpanel/internal/pipeline"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
+	"github.com/alresiainc/alresia-voltpanel/internal/providers/dbadmin"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/docker"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/pkgmanager/brew"
 	"github.com/alresiainc/alresia-voltpanel/internal/proxy"
@@ -91,6 +92,13 @@ type Deps struct {
 	// Packages kicks off -- see internal/domain/job for why those need to
 	// survive a page refresh instead of just living in memory.
 	Jobs *job.Repository
+	// DBAdmin drives real MySQL/PostgreSQL connections for the database
+	// admin tool (§ "something like Adminer") -- see
+	// internal/providers/dbadmin for why it holds real credentials and
+	// runs arbitrary user-typed SQL, and why that's a deliberately
+	// different risk profile from everything else in this API. Nil-checked
+	// per request (never assumed present) the same way Docker/Packages are.
+	DBAdmin *dbadmin.Provider
 }
 
 func (d Deps) DB() *sql.DB { return d.Store.DB() }

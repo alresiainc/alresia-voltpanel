@@ -7,6 +7,7 @@ import Projects from './pages/Projects'
 import Files from './pages/Files'
 import Logs from './pages/Logs'
 import Docker from './pages/Docker'
+import Databases from './pages/Databases'
 import Domains from './pages/Domains'
 import Extensions from './pages/Extensions'
 import Git from './pages/Git'
@@ -21,7 +22,7 @@ import Topbar from './components/Topbar'
 
 export type Tab =
   | 'dash' | 'software' | 'runtimes' | 'proc' | 'projects' | 'files' | 'logs' | 'docker'
-  | 'domains' | 'extensions' | 'git' | 'servers' | 'deployments' | 'pipelines' | 'settings'
+  | 'databases' | 'domains' | 'extensions' | 'git' | 'servers' | 'deployments' | 'pipelines' | 'settings'
 
 function useToken() {
   const [token, setToken] = useState<string>('')
@@ -95,6 +96,7 @@ export default function App() {
           {tab === 'files' && <Files initialPath={filesInitialPath} />}
           {tab === 'logs' && <Logs />}
           {tab === 'docker' && <Docker />}
+          {tab === 'databases' && <Databases />}
           {tab === 'domains' && <Domains />}
           {tab === 'extensions' && <Extensions />}
           {tab === 'git' && <Git />}

@@ -29,12 +29,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/job"
@@ -72,10 +74,17 @@ type Provider struct {
 	Jobs     *job.Repository
 	LogDir   string // e.g. <cfgDir>/logs/jobs
 	lookPath func(string) (string, error)
+
+	mu      sync.Mutex
+	active  map[string]*exec.Cmd // jobID -> running process, for Cancel
+	targets map[string]string    // "<kind>\x00<target>" -> jobID, so a second Install of the same formula while one's already running is rejected instead of silently piling up
 }
 
 func New(hub *ws.Hub, jobs *job.Repository, logDir string) *Provider {
-	return &Provider{Hub: hub, Jobs: jobs, LogDir: logDir, lookPath: exec.LookPath}
+	return &Provider{
+		Hub: hub, Jobs: jobs, LogDir: logDir, lookPath: exec.LookPath,
+		active: map[string]*exec.Cmd{}, targets: map[string]string{},
+	}
 }
 
 // Available reports whether a `brew` binary is on PATH at all -- checked
@@ -260,11 +269,25 @@ func (p *Provider) SetDefaultVersion(ctx context.Context, target string) error {
 // runJob execs `brew <args...>`, creating a job.Job immediately and
 // running the command in a goroutine -- callers get the Job back (with an
 // ID to subscribe to over WS) before the command has necessarily even
-// started, let alone finished.
+// started, let alone finished. Refuses to start a second install/upgrade/
+// uninstall for the same (kind, target) while one is already running --
+// on a machine where a formula has no prebuilt bottle for this OS version,
+// `brew install` can mean compiling from source for a very long time, and
+// two of those piling up for the same target was exactly the confusing
+// "nothing is happening" state this guards against.
 func (p *Provider) runJob(kind, target string, args ...string) (job.Job, error) {
 	if err := ValidateName(target); err != nil {
 		return job.Job{}, err
 	}
+
+	key := kind + "\x00" + target
+	p.mu.Lock()
+	if existing, ok := p.targets[key]; ok {
+		p.mu.Unlock()
+		return job.Job{}, fmt.Errorf("brew: %s %s is already running (job %s) -- wait for it to finish or cancel it first", kind, target, existing)
+	}
+	p.mu.Unlock()
+
 	if err := os.MkdirAll(p.LogDir, 0o755); err != nil {
 		return job.Job{}, fmt.Errorf("brew: create log dir: %w", err)
 	}
@@ -287,9 +310,14 @@ func (p *Provider) runJob(kind, target string, args ...string) (job.Job, error) 
 	stderr, _ := cmd.StderrPipe()
 	if err := cmd.Start(); err != nil {
 		_ = lf.Close()
-		_ = p.Jobs.Finish(j.ID, job.StatusFailed, -1, err.Error())
+		p.finish(j.ID, job.StatusFailed, -1, err.Error())
 		return job.Job{}, err
 	}
+
+	p.mu.Lock()
+	p.active[j.ID] = cmd
+	p.targets[key] = j.ID
+	p.mu.Unlock()
 
 	done := make(chan struct{}, 2)
 	go func() { p.pipeLogs(j.ID, stdout, lf); done <- struct{}{} }()
@@ -300,18 +328,70 @@ func (p *Provider) runJob(kind, target string, args ...string) (job.Job, error) 
 		<-done
 		waitErr := cmd.Wait()
 		_ = lf.Close()
-		if waitErr != nil {
-			exitCode := -1
-			if exitErr, ok := waitErr.(*exec.ExitError); ok {
-				exitCode = exitErr.ExitCode()
-			}
-			_ = p.Jobs.Finish(j.ID, job.StatusFailed, exitCode, waitErr.Error())
-		} else {
-			_ = p.Jobs.Finish(j.ID, job.StatusSuccess, 0, "")
+
+		p.mu.Lock()
+		delete(p.active, j.ID)
+		delete(p.targets, key)
+		p.mu.Unlock()
+
+		if waitErr == nil {
+			p.finish(j.ID, job.StatusSuccess, 0, "")
+			return
 		}
+		exitCode := -1
+		if exitErr, ok := waitErr.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		}
+		status := job.StatusFailed
+		if cmd.ProcessState != nil && cmd.ProcessState.Sys() != nil {
+			// A killed-via-Cancel process still surfaces here as a wait
+			// error; Cancel already knows it canceled and doesn't need
+			// this path, but a signal-killed process (rather than a clean
+			// non-zero exit) is the one case worth its own status instead
+			// of just "failed".
+			if ws, ok := cmd.ProcessState.Sys().(interface{ Signaled() bool }); ok && ws.Signaled() {
+				status = job.StatusCanceled
+			}
+		}
+		p.finish(j.ID, status, exitCode, waitErr.Error())
 	}()
 
 	return j, nil
+}
+
+// finish calls Jobs.Finish and, unlike the code this replaced, actually
+// does something if that write fails instead of discarding the error:
+// logs it and retries once after a short delay. A job that never
+// transitions out of "running" because of a transient SQLite contention
+// error (very plausible here -- concurrent installs each have their own
+// log-writing goroutines hammering this same database) is indistinguishable
+// from a genuinely stuck job in the UI, which is exactly the confusing
+// state being fixed.
+func (p *Provider) finish(jobID string, status job.Status, exitCode int, errMsg string) {
+	if err := p.Jobs.Finish(jobID, status, exitCode, errMsg); err != nil {
+		log.Printf("volt: brew: failed to record job %s finishing (status=%s): %v -- retrying once", jobID, status, err)
+		time.Sleep(500 * time.Millisecond)
+		if err := p.Jobs.Finish(jobID, status, exitCode, errMsg); err != nil {
+			log.Printf("volt: brew: job %s will stay stuck at \"running\" -- retry also failed: %v", jobID, err)
+		}
+	}
+}
+
+// Cancel kills the process backing a still-running job, if any. The
+// existing completion goroutine in runJob picks up the resulting wait
+// error and records the job as canceled -- Cancel doesn't itself touch
+// job state, only the process.
+func (p *Provider) Cancel(jobID string) error {
+	p.mu.Lock()
+	cmd, ok := p.active[jobID]
+	p.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("brew: job %s is not currently running", jobID)
+	}
+	if cmd.Process == nil {
+		return fmt.Errorf("brew: job %s has no process to cancel", jobID)
+	}
+	return cmd.Process.Kill()
 }
 
 func (p *Provider) pipeLogs(id string, r io.Reader, lf *os.File) {

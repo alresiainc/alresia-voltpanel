@@ -64,6 +64,47 @@ func TestGetNotFound(t *testing.T) {
 	}
 }
 
+func TestReconcileStaleFailsOnlyRunningJobs(t *testing.T) {
+	r := newTestRepo(t)
+
+	stillRunning, _ := r.Create("install", "php@8.4", "")
+	alreadyDone, _ := r.Create("install", "cowsay", "")
+	if err := r.Finish(alreadyDone.ID, StatusSuccess, 0, ""); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+
+	n, err := r.ReconcileStale()
+	if err != nil {
+		t.Fatalf("ReconcileStale: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected exactly 1 job reconciled, got %d", n)
+	}
+
+	got, err := r.Get(stillRunning.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Status != StatusFailed {
+		t.Fatalf("expected the orphaned running job to become failed, got %q", got.Status)
+	}
+	if got.Error == "" {
+		t.Fatal("expected a reconciled job to have an explanatory error message")
+	}
+	if got.FinishedAt == nil {
+		t.Fatal("expected FinishedAt to be set")
+	}
+
+	// The already-completed job must be left alone.
+	got, err = r.Get(alreadyDone.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Status != StatusSuccess {
+		t.Fatalf("expected the already-finished job to stay success, got %q", got.Status)
+	}
+}
+
 func TestListOrdersMostRecentFirst(t *testing.T) {
 	r := newTestRepo(t)
 	first, _ := r.Create("install", "redis", "")

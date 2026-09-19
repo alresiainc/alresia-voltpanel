@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	v1 "github.com/alresiainc/alresia-voltpanel/internal/api/v1"
+	"github.com/alresiainc/alresia-voltpanel/internal/domain/dbconn"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/deployment"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/extension"
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/integration"
@@ -21,6 +22,7 @@ import (
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/service"
 	"github.com/alresiainc/alresia-voltpanel/internal/pipeline"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
+	"github.com/alresiainc/alresia-voltpanel/internal/providers/dbadmin"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/docker"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/domainprovider/hosts"
 	"github.com/alresiainc/alresia-voltpanel/internal/providers/pkgmanager/brew"
@@ -61,6 +63,7 @@ type Server struct {
 	proxy      *proxy.Router
 	proxyPort  int
 	extensions *extension.Repository
+	dbAdmin    *dbadmin.Provider
 }
 
 // New wires the daemon's subsystems (storage, process manager, WS hub,
@@ -86,7 +89,7 @@ func New(opt Options) (*Server, error) {
 	mgr := service.NewManager(st, hub)
 
 	registry := providers.NewRegistry()
-	registry.RegisterRuntime(node.New())
+	registry.RegisterRuntime(node.New(filepath.Join(opt.CfgDir, "runtimes", "node")))
 	registry.RegisterRuntime(php.New())
 
 	// Construction never fails except on platforms with no supported
@@ -132,16 +135,28 @@ func New(opt Options) (*Server, error) {
 	proxyRouter := proxy.NewRouter()
 
 	jobs := job.NewRepository(st.DB())
+	// Job completion is tracked in-memory (see internal/providers/pkgmanager/
+	// brew's runJob); anything this fresh Provider didn't just start itself
+	// but which is still marked "running" from a previous process lifetime
+	// has no goroutine left to ever finish it. Reconcile those now, once,
+	// before anything new can be created.
+	if n, err := jobs.ReconcileStale(); err != nil {
+		log.Printf("volt: failed to reconcile stale jobs: %v", err)
+	} else if n > 0 {
+		log.Printf("volt: marked %d job(s) left running from a previous daemon lifetime as failed", n)
+	}
 	packages := brew.New(hub, jobs, filepath.Join(opt.CfgDir, "logs", "jobs"))
+	dbConnections := dbconn.NewRepository(st.DB())
+	dbAdmin := dbadmin.New(dbConnections, secrets)
 
-	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Domains: domainProvider, SSL: sslProvider, Extensions: extensions, Secrets: secrets, Remote: sshProvider, DeployEngine: deployEngine, PipelineEngine: pipelineEngine, Proxy: proxyRouter, Packages: packages, Jobs: jobs})
+	v1.Mount(g, v1.Deps{Store: st, Mgr: mgr, Hub: hub, Session: session, Token: opt.Token, Dev: opt.Dev, Providers: registry, Docker: dockerClient, Domains: domainProvider, SSL: sslProvider, Extensions: extensions, Secrets: secrets, Remote: sshProvider, DeployEngine: deployEngine, PipelineEngine: pipelineEngine, Proxy: proxyRouter, Packages: packages, Jobs: jobs, DBAdmin: dbAdmin})
 
 	// Public, unversioned.
 	g.GET("/health", func(c *gin.Context) { c.JSON(200, gin.H{"ok": true}) })
 
 	mountStaticUI(g, opt.EmbeddedFS)
 
-	return &Server{opt: opt, r: g, mgr: mgr, extensions: extensions, proxy: proxyRouter}, nil
+	return &Server{opt: opt, r: g, mgr: mgr, extensions: extensions, proxy: proxyRouter, dbAdmin: dbAdmin}, nil
 }
 
 // Close releases resources that outlive a single request but must stop
@@ -150,6 +165,9 @@ func New(opt Options) (*Server, error) {
 func (s *Server) Close() {
 	if s.extensions != nil {
 		s.extensions.CloseAll()
+	}
+	if s.dbAdmin != nil {
+		s.dbAdmin.CloseAll()
 	}
 }
 

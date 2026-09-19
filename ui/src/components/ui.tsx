@@ -318,3 +318,36 @@ export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<H
 export function Label({ children }: { children: React.ReactNode }) {
   return <label className="mb-1 block text-xs font-medium text-slate-500">{children}</label>
 }
+
+// ---------------------------------------------------------------------------
+// Modal
+
+export function Modal({
+  title,
+  onClose,
+  children,
+  actions,
+}: {
+  title: React.ReactNode
+  onClose: () => void
+  children: React.ReactNode
+  actions?: React.ReactNode
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onClick={onClose}>
+      <div
+        className="max-h-[85vh] w-full max-w-2xl overflow-auto rounded-xl bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+          <div className="text-sm font-semibold text-slate-900">{title}</div>
+          <button onClick={onClose} className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+            ✕
+          </button>
+        </div>
+        <div className="p-4">{children}</div>
+        {actions && <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-4 py-3">{actions}</div>}
+      </div>
+    </div>
+  )
+}

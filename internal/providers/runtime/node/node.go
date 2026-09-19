@@ -1,37 +1,45 @@
 // Package node implements providers.RuntimeProvider for Node.js.
 //
-// Detection is real, not mocked: it shells out to `node --version` for the
-// currently active interpreter on PATH, and reads nvm's version directory
-// (~/.nvm/versions/node, or $NVM_DIR if set) for every nvm-managed
-// install, since nvm itself is a shell function rather than a binary that
-// could be exec'd directly.
+// Detection, install, remove, and set-default are all real, and all
+// native: this package downloads the exact same official prebuilt
+// binaries nodejs.org publishes for every release (the same ones nvm/fnm/
+// volta fetch under the hood) directly -- no Homebrew, no nvm, no shell
+// dependency of any kind. That's a deliberate choice: Node is one of the
+// few pieces of software in VoltPanel's "install fresh software" story
+// that vendor-ships real prebuilt binaries for macOS, Linux, and Windows
+// alike, which is exactly what makes a genuinely native, cross-platform
+// version manager possible for it (see the package doc for why PHP can't
+// do the same thing).
 //
-// Install/Remove/SetDefault are real too (they drive `nvm install` /
-// `nvm uninstall` / `nvm alias default` through a login shell, since that's
-// the only way to reach a shell-function-based version manager from a
-// non-interactive process) -- but per the plan, unit tests must never
-// actually install/remove a real Node version. All system interaction goes
-// through the installer interface below so tests substitute a fake; only
-// node_real_test.go (behind the VOLT_REAL_INSTALL_TEST=1 gate) exercises
-// the real nvmInstaller.
+// Downloads are verified against nodejs.org's own published SHA256
+// checksums before anything is extracted. Installed versions live under
+// <VoltPanel config dir>/runtimes/node/<version>, entirely separate from
+// any system Node install or nvm -- switching VoltPanel's "default"
+// version never touches anything outside that directory (no symlink into
+// /usr/local/bin, which would need permissions this daemon deliberately
+// never takes). ActiveVersion still reports whatever `node` happens to be
+// on PATH, informationally, but SetDefault only ever affects VoltPanel's
+// own record of which managed version is "current".
+//
+// Per the plan, unit tests never touch the network or a real install --
+// see installer_test.go for the fake-installer-backed unit tests and
+// real_test.go (behind VOLT_REAL_INSTALL_TEST=1) for the one gated test
+// that exercises a real download.
 package node
 
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"regexp"
 	"sort"
-	"strings"
 
 	"github.com/alresiainc/alresia-voltpanel/internal/providers"
 )
 
-// installer is the seam between Provider and the real system: running
-// `node`/`nvm` and reading the nvm versions directory. Tests substitute a
-// fake installer instead of shelling out or touching a real install.
+// installer is the seam between Provider and the real system. Tests
+// substitute a fake installer instead of touching the network or a real
+// install.
 type installer interface {
 	ActiveVersion(ctx context.Context) (version, path string, ok bool)
 	ManagedVersions(ctx context.Context) ([]providers.RuntimeVersion, error)
@@ -45,9 +53,9 @@ type Provider struct {
 	inst installer
 }
 
-// New returns a Provider backed by real system calls (nvm + `node
-// --version`). See the package doc for exactly what each method does.
-func New() *Provider { return &Provider{inst: &nvmInstaller{}} }
+// New returns a Provider that downloads real nodejs.org binaries into
+// baseDir (typically <cfgDir>/runtimes/node).
+func New(baseDir string) *Provider { return &Provider{inst: &nativeInstaller{baseDir: baseDir}} }
 
 // newWithInstaller is used by tests to inject a fake installer.
 func newWithInstaller(i installer) *Provider { return &Provider{inst: i} }
@@ -55,8 +63,8 @@ func newWithInstaller(i installer) *Provider { return &Provider{inst: i} }
 func (p *Provider) Kind() string { return "node" }
 
 // DetectInstalled returns the active `node` (if any, marked as default)
-// plus every nvm-managed version, deduplicated by version string. Never
-// mutates anything.
+// plus every VoltPanel-managed version, deduplicated by version string.
+// Never mutates anything.
 func (p *Provider) DetectInstalled(ctx context.Context) ([]providers.RuntimeVersion, error) {
 	managed, err := p.inst.ManagedVersions(ctx)
 	if err != nil {
@@ -102,13 +110,13 @@ func (p *Provider) SetDefault(ctx context.Context, version string) error {
 	return p.inst.SetDefault(ctx, version)
 }
 
-// --- real installer -------------------------------------------------------
-
-type nvmInstaller struct{}
-
 var semverRe = regexp.MustCompile(`\d+\.\d+\.\d+`)
 
-func (nvmInstaller) ActiveVersion(ctx context.Context) (string, string, bool) {
+// activeVersionOnPath reports whatever `node` is on PATH right now,
+// regardless of who installed it (system package, nvm, VoltPanel, ...).
+// Shared by nativeInstaller as the fallback "detected but not
+// VoltPanel-managed" signal when no managed default is set yet.
+func activeVersionOnPath(ctx context.Context) (string, string, bool) {
 	path, err := exec.LookPath("node")
 	if err != nil {
 		return "", "", false
@@ -122,79 +130,4 @@ func (nvmInstaller) ActiveVersion(ctx context.Context) (string, string, bool) {
 		return "", "", false
 	}
 	return v, path, true
-}
-
-var nodeVersionDirRe = regexp.MustCompile(`^v?\d+\.\d+\.\d+$`)
-
-func (nvmInstaller) ManagedVersions(ctx context.Context) ([]providers.RuntimeVersion, error) {
-	dir := nvmVersionsDir()
-	if dir == "" {
-		return nil, nil
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var out []providers.RuntimeVersion
-	for _, e := range entries {
-		if !e.IsDir() || !nodeVersionDirRe.MatchString(e.Name()) {
-			continue
-		}
-		out = append(out, providers.RuntimeVersion{
-			Version:     strings.TrimPrefix(e.Name(), "v"),
-			InstallPath: filepath.Join(dir, e.Name(), "bin", "node"),
-		})
-	}
-	return out, nil
-}
-
-func nvmVersionsDir() string {
-	if d := os.Getenv("NVM_DIR"); d != "" {
-		return filepath.Join(d, "versions", "node")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".nvm", "versions", "node")
-}
-
-func (nvmInstaller) Install(ctx context.Context, version string, progress providers.ProgressFunc) error {
-	if _, err := exec.LookPath("bash"); err != nil {
-		return fmt.Errorf("node: install requires bash + nvm, bash not found: %w", err)
-	}
-	if progress != nil {
-		progress(0, "installing node "+version+" via nvm")
-	}
-	out, err := exec.CommandContext(ctx, "bash", "-lc", "nvm install "+shellQuote(version)).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("nvm install %s: %w: %s", version, err, string(out))
-	}
-	if progress != nil {
-		progress(100, "installed node "+version)
-	}
-	return nil
-}
-
-func (nvmInstaller) Remove(ctx context.Context, version string) error {
-	out, err := exec.CommandContext(ctx, "bash", "-lc", "nvm uninstall "+shellQuote(version)).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("nvm uninstall %s: %w: %s", version, err, string(out))
-	}
-	return nil
-}
-
-func (nvmInstaller) SetDefault(ctx context.Context, version string) error {
-	out, err := exec.CommandContext(ctx, "bash", "-lc", "nvm alias default "+shellQuote(version)).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("nvm alias default %s: %w: %s", version, err, string(out))
-	}
-	return nil
-}
-
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

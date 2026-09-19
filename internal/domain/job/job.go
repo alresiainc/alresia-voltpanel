@@ -21,9 +21,10 @@ var ErrNotFound = errors.New("job: not found")
 type Status string
 
 const (
-	StatusRunning Status = "running"
-	StatusSuccess Status = "success"
-	StatusFailed  Status = "failed"
+	StatusRunning  Status = "running"
+	StatusSuccess  Status = "success"
+	StatusFailed   Status = "failed"
+	StatusCanceled Status = "canceled"
 )
 
 // Job is one background package-management operation.
@@ -85,6 +86,26 @@ func (r *Repository) Finish(id string, status Status, exitCode int, errMsg strin
 		UPDATE jobs SET status = ?, exit_code = ?, error = ?, finished_at = ? WHERE id = ?
 	`, string(status), exitCode, errVal, now.Format(time.RFC3339), id)
 	return err
+}
+
+// ReconcileStale marks every job still recorded as StatusRunning as
+// failed. Called once, right after this Repository is constructed at
+// daemon startup: job completion is tracked purely in-memory (the
+// goroutine that calls Finish once the underlying process exits -- see
+// internal/providers/pkgmanager/brew's runJob), so a job that was still
+// running when the daemon last stopped has nothing left to ever call
+// Finish for it. Without this, that row stays "running" forever and the
+// UI has no way to tell a genuinely stuck job from one whose tracking
+// just got orphaned by a restart.
+func (r *Repository) ReconcileStale() (int, error) {
+	res, err := r.db.Exec(`
+		UPDATE jobs SET status = ?, error = ?, finished_at = ? WHERE status = ?
+	`, string(StatusFailed), "interrupted: daemon restarted while this job was still running", time.Now().UTC().Format(time.RFC3339), string(StatusRunning))
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
 }
 
 // Get fetches one job by id.

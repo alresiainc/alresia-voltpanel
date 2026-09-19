@@ -40,6 +40,25 @@ func TestAvailableTrueWhenBrewFound(t *testing.T) {
 	}
 }
 
+func TestDuplicateInstallIsRejected(t *testing.T) {
+	p := New(nil, nil, t.TempDir())
+	// White-box: simulate an already-running install without spawning a
+	// real `brew` process, exactly the state runJob itself sets before
+	// starting a command.
+	p.targets["install\x00cowsay"] = "some-other-job-id"
+
+	if _, err := p.Install("cowsay"); err == nil {
+		t.Fatal("expected a second install of the same formula to be rejected while one is running")
+	}
+}
+
+func TestCancelUnknownJobErrors(t *testing.T) {
+	p := New(nil, nil, t.TempDir())
+	if err := p.Cancel("does-not-exist"); err == nil {
+		t.Fatal("expected Cancel to error for a job it has no active process for")
+	}
+}
+
 // TestLiveIntegration exercises Search/ListInstalled against the real
 // `brew` binary if one happens to be on this machine's PATH -- skipped
 // otherwise, exactly like internal/providers/docker's own live test does

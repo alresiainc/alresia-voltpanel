@@ -117,12 +117,37 @@ export interface Job {
   id: string
   kind: string
   target: string
-  status: 'running' | 'success' | 'failed'
+  status: 'running' | 'success' | 'failed' | 'canceled'
   logFile: string
   error?: string
   exitCode?: number
   startedAt: string
   finishedAt?: string
+}
+
+export interface DBConnection {
+  id: string
+  name: string
+  kind: 'mysql' | 'postgres'
+  host: string
+  port: number
+  username: string
+  databaseName?: string
+  createdAt: string
+}
+
+export interface DBColumnInfo {
+  name: string
+  type: string
+  nullable: boolean
+}
+
+export interface DBQueryResult {
+  columns: string[]
+  rows: unknown[][]
+  rowsAffected: number
+  durationMs: number
+  truncated: boolean
 }
 
 export interface DockerPort {
@@ -332,6 +357,10 @@ export const api = {
   detectRuntime: (kind: string) => request<Runtime>(`/runtimes/${encodeURIComponent(kind)}/detect`, { method: 'POST' }),
   setDefaultRuntimeVersion: (kind: string, version: string) =>
     request<Runtime>(`/runtimes/${encodeURIComponent(kind)}/versions/${encodeURIComponent(version)}/default`, { method: 'POST' }),
+  installRuntimeVersion: (kind: string, version: string) =>
+    request<Runtime>(`/runtimes/${encodeURIComponent(kind)}/versions/install`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version }) }),
+  removeRuntimeVersion: (kind: string, version: string) =>
+    request<Runtime>(`/runtimes/${encodeURIComponent(kind)}/versions/${encodeURIComponent(version)}?confirm=true`, { method: 'DELETE' }),
 
   listServices: () => request<Service[]>('/services'),
   startService: (id: string, body: { name: string; command: string; args?: string[]; cwd?: string; env?: Record<string, string> }) =>
@@ -456,4 +485,20 @@ export const api = {
     request('/packages/versions/default', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target }) }),
   listJobs: () => request<Job[]>('/jobs'),
   getJob: (id: string) => request<Job>(`/jobs/${encodeURIComponent(id)}`),
+  getJobLog: (id: string) => request<string>(`/jobs/${encodeURIComponent(id)}/log`),
+  cancelJob: (id: string) => request(`/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
+
+  listDBConnections: () => request<DBConnection[]>('/db-connections'),
+  createDBConnection: (body: { name: string; kind: 'mysql' | 'postgres'; host: string; port: number; username: string; password?: string; databaseName?: string }) =>
+    request<DBConnection>('/db-connections', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+  deleteDBConnection: (id: string) => request(`/db-connections/${encodeURIComponent(id)}?confirm=true`, { method: 'DELETE' }),
+  testDBConnection: (id: string) => request(`/db-connections/${encodeURIComponent(id)}/test`, { method: 'POST' }),
+  listDatabases: (id: string) => request<string[]>(`/db-connections/${encodeURIComponent(id)}/databases`),
+  listTables: (id: string, database: string) => request<string[]>(`/db-connections/${encodeURIComponent(id)}/tables?database=${encodeURIComponent(database)}`),
+  listColumns: (id: string, database: string, table: string) =>
+    request<DBColumnInfo[]>(`/db-connections/${encodeURIComponent(id)}/tables/${encodeURIComponent(table)}/columns?database=${encodeURIComponent(database)}`),
+  browseTable: (id: string, database: string, table: string, offset = 0) =>
+    request<DBQueryResult>(`/db-connections/${encodeURIComponent(id)}/tables/${encodeURIComponent(table)}/rows?database=${encodeURIComponent(database)}&offset=${offset}`),
+  runQuery: (id: string, database: string, sql: string) =>
+    request<DBQueryResult>(`/db-connections/${encodeURIComponent(id)}/query`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ database, sql }) }),
 }

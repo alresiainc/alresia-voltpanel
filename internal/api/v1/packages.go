@@ -8,6 +8,7 @@ package v1
 
 import (
 	"net/http"
+	"os"
 
 	"github.com/alresiainc/alresia-voltpanel/internal/domain/job"
 	"github.com/gin-gonic/gin"
@@ -213,5 +214,60 @@ func getJob(d Deps) gin.HandlerFunc {
 			return
 		}
 		c.JSON(http.StatusOK, j)
+	}
+}
+
+// getJobLog returns everything a job has printed so far, read straight
+// from its log file -- the WS "log" stream only carries lines emitted
+// after a client subscribes, so this is what lets the UI show a job's
+// full history for one that started before the page was even open (e.g.
+// checking on an install kicked off an hour ago).
+func getJobLog(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.Jobs == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "job not found"})
+			return
+		}
+		j, err := d.Jobs.Get(c.Param("id"))
+		if err != nil {
+			if err == job.ErrNotFound {
+				c.JSON(http.StatusNotFound, gin.H{"error": "job not found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if j.LogFile == "" {
+			c.Data(http.StatusOK, "text/plain; charset=utf-8", []byte{})
+			return
+		}
+		data, err := os.ReadFile(j.LogFile)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Data(http.StatusOK, "text/plain; charset=utf-8", data)
+	}
+}
+
+// cancelJob kills the process backing a still-running job -- surfaced as
+// a real user action (not just an internal cleanup) since a `brew
+// install` with no prebuilt bottle for this OS can mean compiling from
+// source for a very long time, and a user needs a way to actually stop
+// that rather than just watch it run.
+func cancelJob(d Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if d.Packages == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "package management is not available"})
+			return
+		}
+		id := c.Param("id")
+		err := d.Packages.Cancel(id)
+		audit(d.DB(), "job.cancel", "job", id, resultOf(err))
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true})
 	}
 }

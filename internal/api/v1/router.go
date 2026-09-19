@@ -35,6 +35,8 @@ func Mount(g *gin.Engine, d Deps) {
 	authed.GET("/runtimes", listRuntimes(d))
 	authed.POST("/runtimes/:kind/detect", detectRuntimeKind(d))
 	authed.POST("/runtimes/:kind/versions/:version/default", setDefaultRuntimeVersion(d))
+	authed.POST("/runtimes/:kind/versions/install", installRuntimeVersion(d))
+	authed.DELETE("/runtimes/:kind/versions/:version", removeRuntimeVersion(d))
 
 	authed.GET("/services", listServices(d))
 	authed.POST("/services/:id/start", startService(d))
@@ -74,6 +76,8 @@ func Mount(g *gin.Engine, d Deps) {
 	authed.POST("/packages/versions/default", setDefaultPackageVersion(d))
 	authed.GET("/jobs", listJobs(d))
 	authed.GET("/jobs/:id", getJob(d))
+	authed.GET("/jobs/:id/log", getJobLog(d))
+	authed.POST("/jobs/:id/cancel", cancelJob(d))
 
 	authed.GET("/docker/containers", listDockerContainers(d))
 	authed.GET("/docker/containers/:id", getDockerContainer(d))
@@ -118,6 +122,16 @@ func Mount(g *gin.Engine, d Deps) {
 	authed.GET("/servers/:id/files", listServerFiles(d))
 	authed.GET("/servers/:id/files/read", readServerFile(d))
 	authed.PUT("/servers/:id/files", writeServerFile(d))
+
+	authed.GET("/db-connections", listDBConnections(d))
+	authed.POST("/db-connections", createDBConnection(d))
+	authed.DELETE("/db-connections/:id", deleteDBConnection(d))
+	authed.POST("/db-connections/:id/test", testDBConnection(d))
+	authed.GET("/db-connections/:id/databases", listDatabases(d))
+	authed.GET("/db-connections/:id/tables", listTables(d))
+	authed.GET("/db-connections/:id/tables/:table/columns", listColumns(d))
+	authed.GET("/db-connections/:id/tables/:table/rows", browseTable(d))
+	authed.POST("/db-connections/:id/query", runQuery(d))
 
 	authed.GET("/deployment-targets", listDeploymentTargets(d))
 	authed.POST("/deployment-targets", createDeploymentTarget(d))
